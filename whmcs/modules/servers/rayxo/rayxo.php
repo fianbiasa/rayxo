@@ -14,7 +14,8 @@
  *
  * It creates, suspends, unsuspends and terminates hosting accounts, changes
  * their package and password, signs customers in to the panel (single
- * sign-on), and reads disk and bandwidth usage for WHMCS.
+ * sign-on, from the admin area and the customer's service page), and reads
+ * disk and bandwidth usage for WHMCS.
  */
 
 use WHMCS\Database\Capsule;
@@ -193,6 +194,23 @@ function rayxo_ServiceSingleSignOn(array $params)
     } catch (Exception $exception) {
         return ['success' => false, 'errorMsg' => $exception->getMessage()];
     }
+}
+
+/**
+ * The "Log in to RAYXO" button on the customer's service page. WHMCS shows
+ * the single sign-on button only in its admin area by itself; customers get
+ * this one while the service is active.
+ *
+ * @param  array<string, mixed>  $params
+ * @return array<string, mixed>|string
+ */
+function rayxo_ClientArea(array $params)
+{
+    if (($params['status'] ?? '') !== 'Active') {
+        return '';
+    }
+
+    return ['templatefile' => 'templates/clientarea', 'vars' => []];
 }
 
 /**
