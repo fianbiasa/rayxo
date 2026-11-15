@@ -3,7 +3,9 @@
 /**
  * RAYXO provisioning module for WHMCS.
  *
- * Copy this folder to <whmcs>/modules/servers/rayxo. In WHMCS, add a server
+ * Unzip rayxo-whmcs-<version>.zip (from the RAYXO release of the panel's
+ * version, at rayxopanel.com/download) in the WHMCS folder, which puts this
+ * folder at <whmcs>/modules/servers/rayxo. In WHMCS, add a server
  * (System Settings > Servers) of module "RAYXO" with:
  *   - Hostname: the panel's hostname, Port: the panel's port (2222 by
  *     default), "Use SSL" on;

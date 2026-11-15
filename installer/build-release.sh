@@ -7,12 +7,16 @@
 # Output in dist/:
 #   rayxo-<version>-linux-amd64.tar.gz (+ .sha256)
 #   rayxo-<version>-linux-arm64.tar.gz (+ .sha256)
+#   rayxo-whmcs-<version>.zip (+ .sha256)
 #   setup.sh
 #
 # The package contains everything a server needs to run the panel: Laravel
 # with production dependencies already installed, the React front end already
 # built, the Go agent already compiled, phpMyAdmin and Roundcube (webmail).
 # Servers never need Composer, Node.js or Go.
+#
+# The WHMCS module ships with each release because it speaks the API of the
+# same version: unzipped in the WHMCS folder, it lands in modules/servers/rayxo.
 #
 # Builds from the working tree, minus anything ignored by Git. Runs on macOS
 # (bash 3.2) and Linux.
@@ -45,7 +49,7 @@ if [[ ! "$VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]]; then
     exit 1
 fi
 
-for tool in git composer pnpm php go make curl; do
+for tool in git composer pnpm php go make curl zip; do
     command -v "$tool" >/dev/null || { echo "Missing required tool: $tool" >&2; exit 1; }
 done
 
@@ -217,6 +221,17 @@ for arch in $ARCHES; do
     make_tarball "$WORK" "$name" "$DIST/$name.tar.gz"
     printf '%s  %s\n' "$(sha256 "$DIST/$name.tar.gz")" "$name.tar.gz" >"$DIST/$name.tar.gz.sha256"
 done
+
+whmcs="rayxo-whmcs-$VERSION"
+echo "==> Packaging $whmcs"
+module="$WORK/$whmcs/modules/servers/rayxo"
+mkdir -p "$(dirname "$module")"
+cp -R "$SRC/whmcs/modules/servers/rayxo" "$module"
+printf '%s\n' "$VERSION" >"$module/VERSION"
+cp "$SRC/LICENSE" "$module/LICENSE"
+rm -f "$DIST/$whmcs.zip"
+(cd "$WORK/$whmcs" && zip -q -X -r "$DIST/$whmcs.zip" modules)
+printf '%s  %s\n' "$(sha256 "$DIST/$whmcs.zip")" "$whmcs.zip" >"$DIST/$whmcs.zip.sha256"
 
 echo "==> Done"
 ls -lh "$DIST"
