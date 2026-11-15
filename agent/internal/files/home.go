@@ -602,8 +602,16 @@ func (h *Home) Download(w io.Writer, p string) (Entry, error) {
 }
 
 // replace writes r to a new file next to p and renames it over p, so p is
-// never half written.
+// never half written, and is on the disk once it returns.
 func (h *Home) replace(p string, mode fs.FileMode, r io.Reader) error {
+	return h.replaceFile(p, mode, r, true)
+}
+
+// replaceFile is replace; without durable the file is not flushed to the
+// disk by itself. Extracting an archive writes thousands of files, and
+// flushing each one costs milliseconds, so it flushes all of them at once
+// when done (see syncHome).
+func (h *Home) replaceFile(p string, mode fs.FileMode, r io.Reader, durable bool) error {
 	temp := join(parent(p), ".rayxo-"+randomHex(8)+".tmp")
 
 	file, err := h.root.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
@@ -612,7 +620,7 @@ func (h *Home) replace(p string, mode fs.FileMode, r io.Reader) error {
 	}
 
 	_, err = io.Copy(file, r)
-	if err == nil {
+	if err == nil && durable {
 		err = file.Sync()
 	}
 

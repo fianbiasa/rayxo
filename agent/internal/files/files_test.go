@@ -2,6 +2,7 @@ package files
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -602,5 +603,19 @@ func TestRemoveDeletesForGoodAndStaysInTheHome(t *testing.T) {
 
 	if outcome := h.Remove([]string{"", TrashDir}); len(outcome.Failed) != 2 {
 		t.Fatalf("the home or the trash could be removed: %+v", outcome)
+	}
+}
+
+func TestAHelperThatRanOutOfTimeIsReportedAsATimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancel()
+	<-ctx.Done()
+
+	account := Account{UID: os.Getuid(), GID: os.Getgid(), Home: t.TempDir()}
+	err := Runner{Executable: "/bin/sleep"}.Run(ctx, account, OpExtract, ExtractParams{Path: "a.zip"}, nil, nil)
+
+	var failure *Error
+	if !errors.As(err, &failure) || failure.Reason != ReasonTimeout || !strings.Contains(failure.Message, "part of it may be done") {
+		t.Fatalf("err = %v", err)
 	}
 }

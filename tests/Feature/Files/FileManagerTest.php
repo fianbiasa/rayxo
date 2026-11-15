@@ -363,6 +363,15 @@ class FileManagerTest extends TestCase
             ->assertInertiaFlash('toast.message', '10 files and 2 folders extracted. 3 already existed and were left as they are. 1 were refused because they would land outside the folder.');
     }
 
+    public function test_an_extraction_stopped_for_taking_too_long_says_it_may_be_partial()
+    {
+        $this->mockAgentFailure('timeout');
+
+        $this->actingAs(User::factory()->create(['username' => 'budi']))
+            ->post(route('files.extract'), ['path' => 'site/big.zip', 'target' => 'site/big', 'overwrite' => false])
+            ->assertSessionHasErrors(['target' => 'This took too long and was stopped partway, so only part of it may be done. Check the result before using it.']);
+    }
+
     public function test_searching_and_counting_answer_with_json()
     {
         $agent = $this->app->instance(AgentClient::class, new FakeAgentClient);

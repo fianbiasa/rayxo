@@ -30,6 +30,9 @@ const (
 	ReasonIntoItself   = "into_itself"
 	ReasonTrash        = "trash"
 	ReasonFailed       = "failed"
+	// ReasonTimeout is an operation stopped for taking too long: part of
+	// it may be done.
+	ReasonTimeout = "timeout"
 )
 
 // Error is a failure the account can understand: what went wrong (Reason)

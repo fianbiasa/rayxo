@@ -644,5 +644,6 @@
     "The username :username from the backup cannot be used here; enter another username.": "Username :username dari backup tidak bisa dipakai di sini; isi username lain.",
     "Importing the backup. This page shows how it goes.": "Mengimpor backup. Halaman ini menampilkan perkembangannya.",
     ":domain used PHP choice :choice of DirectAdmin, which the backup does not name: it gets the default version; choose its version again.": ":domain memakai pilihan PHP ke-:choice di DirectAdmin, yang versinya tidak tercatat di backup: memakai versi bawaan; pilih lagi versinya.",
-    "The automatic replies of :domain are left out: set them again in the panel.": "Balasan otomatis :domain tidak ikut: atur lagi di panel."
+    "The automatic replies of :domain are left out: set them again in the panel.": "Balasan otomatis :domain tidak ikut: atur lagi di panel.",
+    "This took too long and was stopped partway, so only part of it may be done. Check the result before using it.": "Ini memakan waktu terlalu lama dan dihentikan di tengah jalan, jadi mungkin baru sebagian yang selesai. Periksa hasilnya sebelum dipakai."
 }

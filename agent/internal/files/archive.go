@@ -477,6 +477,10 @@ func (h *Home) extract(archive, destination string, x extractor) (ExtractResult,
 		err = x.tar(file, format)
 	}
 
+	if synced := h.syncHome(); err == nil {
+		err = synced
+	}
+
 	return result, err
 }
 
@@ -685,7 +689,7 @@ func (x *extractor) place(entry archiveEntry) error {
 			return errorf(ReasonInvalid, "the archive is damaged: %v", err)
 		}
 
-		err = x.home.replace(target, permOr(entry.mode, newFileMode)|0o600, &limitedReader{reader: content, extractor: x})
+		err = x.home.replaceFile(target, permOr(entry.mode, newFileMode)|0o600, &limitedReader{reader: content, extractor: x}, false)
 		_ = content.Close()
 
 		if err != nil {

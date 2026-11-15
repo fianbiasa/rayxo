@@ -461,6 +461,7 @@ class FileManagerService
             'into_itself' => __('A folder cannot be copied or moved into itself.'),
             'trash' => __('The trash can only be changed from the Trash page.'),
             'invalid' => __('That path or name is not valid.'),
+            'timeout' => __('This took too long and was stopped partway, so only part of it may be done. Check the result before using it.'),
             default => __('The file operation failed. Try again in a moment.'),
         };
     }

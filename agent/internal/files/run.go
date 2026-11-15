@@ -68,6 +68,10 @@ func (r Runner) Run(ctx context.Context, account Account, op string, params any,
 	}
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return errorf(ReasonTimeout, "%s took too long and was stopped; part of it may be done", op)
+		}
+
 		return fmt.Errorf("files helper %s for %s: %w: %s", op, account.Home, err, strings.TrimSpace(stderr.String()))
 	}
 

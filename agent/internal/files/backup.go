@@ -201,7 +201,12 @@ func (h *Home) BackupUnpack(stream io.Reader, destination string) (ExtractResult
 
 	x := extractor{home: h, destination: destination, result: &result, overwrite: true, maxEntries: MaxBackupEntries, maxBytes: MaxBackupBytes}
 
-	return result, x.tarStream(stream)
+	err := x.tarStream(stream)
+	if synced := h.syncHome(); err == nil {
+		err = synced
+	}
+
+	return result, err
 }
 
 // BackupWriter writes a backup the agent keeps outside the home: first
