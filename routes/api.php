@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\DomainController;
 use App\Http\Controllers\Api\V1\MailboxController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\PackageController;
+use App\Http\Controllers\Api\V1\UsageController;
 use App\Http\Middleware\AuthenticateWithLoginKey;
 use Illuminate\Support\Facades\Route;
 
@@ -24,6 +25,7 @@ Route::prefix('v1')->name('api.v1.')->middleware([AuthenticateWithLoginKey::clas
         Route::middleware('login-key:accounts:read')->group(function () {
             Route::get('accounts', [AccountController::class, 'index'])->name('accounts.index');
             Route::get('accounts/{account:username}', [AccountController::class, 'show'])->name('accounts.show');
+            Route::get('usage', UsageController::class)->name('usage');
         });
 
         Route::middleware('login-key:backups:read')->group(function () {
@@ -34,12 +36,14 @@ Route::prefix('v1')->name('api.v1.')->middleware([AuthenticateWithLoginKey::clas
 
         Route::post('accounts/{account:username}/backups', [BackupController::class, 'store'])->middleware(['login-key:backups:write', 'throttle:20,1,api-backup-now'])->name('accounts.backups.store');
 
+        Route::post('accounts/{account:username}/login-link', [AccountController::class, 'loginLink'])->middleware(['login-key:accounts:login', 'throttle:60,1,api-login-link'])->name('accounts.login-link');
         Route::middleware('login-key:accounts:write')->group(function () {
             Route::post('accounts', [AccountController::class, 'store'])->name('accounts.store');
             Route::post('accounts/{account:username}/suspend', [AccountController::class, 'suspend'])->name('accounts.suspend');
             Route::post('accounts/{account:username}/unsuspend', [AccountController::class, 'unsuspend'])->name('accounts.unsuspend');
             Route::put('accounts/{account:username}/package', [AccountController::class, 'updatePackage'])->name('accounts.package.update');
             Route::delete('accounts/{account:username}', [AccountController::class, 'destroy'])->name('accounts.destroy');
+            Route::put('accounts/{account:username}/password', [AccountController::class, 'password'])->name('accounts.password.update');
         });
     });
 

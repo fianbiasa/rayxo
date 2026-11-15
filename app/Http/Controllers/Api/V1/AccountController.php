@@ -10,12 +10,14 @@ use App\Http\Resources\AccountResource;
 use App\Models\Package;
 use App\Models\User;
 use App\Services\AccountService;
+use App\Services\LoginLinkService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 /**
  * The hosting accounts an administrator or reseller manages, as in the
@@ -125,6 +127,34 @@ class AccountController extends Controller
         $this->accounts->delete($account, $request->user());
 
         return (new AccountResource($account->refresh()->load(['package', 'primaryDomain'])))->response()->setStatusCode(202);
+    }
+
+    /**
+     * Give the account a new password for the panel.
+     */
+    public function password(Request $request, User $account): AccountResource
+    {
+        $this->authorizeAccount($account);
+
+        $validated = $request->validate(['password' => ['required', 'string', Password::default()]]);
+
+        $this->accounts->changePassword($account, $validated['password'], $request->user());
+
+        return new AccountResource($account->refresh()->load(['package', 'primaryDomain']));
+    }
+
+    /**
+     * A one-time link that signs the account in to the panel, for a
+     * minute.
+     */
+    public function loginLink(Request $request, User $account, LoginLinkService $links): JsonResponse
+    {
+        $this->authorizeAccount($account);
+
+        /** @var User $actor */
+        $actor = $request->user();
+
+        return response()->json(['data' => $links->create($account, $actor)], 201);
     }
 
     /**

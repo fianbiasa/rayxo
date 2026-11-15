@@ -221,6 +221,21 @@ class AccountService
     }
 
     /**
+     * Give a hosting account a new password for the panel, such as from a
+     * billing system. Its sign-ins elsewhere end.
+     */
+    public function changePassword(User $account, string $password, User $actor): void
+    {
+        DB::transaction(function () use ($account, $password, $actor): void {
+            $account->forceFill(['password' => $password, 'remember_token' => null])->save();
+
+            DB::table('sessions')->where('user_id', $account->id)->delete();
+
+            $this->audit->record('account.password_changed', $account, ['username' => $account->username], $actor);
+        });
+    }
+
+    /**
      * Block the account from signing in right away and, for a hosting
      * account, lock it on the server.
      *

@@ -128,6 +128,8 @@ export const auditActionLabels: Record<string, string> = {
     'backup.system_downloaded': 'Backup sistem diunduh',
     'backup.system_deleted': 'Backup sistem dihapus',
     'backup.server_scanned': 'Backup di folder server didaftarkan',
+    'account.login_link_created': 'Tautan login sekali pakai dibuat',
+    'account.password_changed': 'Password akun diganti',
     'backup.import_started': 'Impor akun dimulai',
     'backup.imported': 'Akun diimpor dari panel lain',
     'backup.transfer_started': 'Transfer akun dari server lain dimulai',

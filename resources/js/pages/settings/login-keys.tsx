@@ -35,7 +35,10 @@ type Props = {
 
 const permissionLabels: Record<string, string> = {
     'accounts:read': 'Lihat akun hosting',
-    'accounts:write': 'Buat, suspend, ubah paket, dan hapus akun hosting',
+    'accounts:write':
+        'Buat, suspend, ubah paket, dan hapus akun hosting, serta ganti password-nya',
+    'accounts:login':
+        'Masuk ke panel sebagai akun hosting (SSO, misalnya dari WHMCS)',
     'packages:read': 'Lihat paket',
     'backups:read':
         'Lihat dan unduh backup akun hosting (berisi data dan hash password akun)',
@@ -97,6 +100,18 @@ const endpoints: {
         path: '/accounts/{username}',
         permission: 'accounts:write',
     },
+    {
+        method: 'PUT',
+        path: '/accounts/{username}/password',
+        body: 'password',
+        permission: 'accounts:write',
+    },
+    {
+        method: 'POST',
+        path: '/accounts/{username}/login-link',
+        permission: 'accounts:login',
+    },
+    { method: 'GET', path: '/usage', permission: 'accounts:read' },
     {
         method: 'GET',
         path: '/accounts/{username}/backups',

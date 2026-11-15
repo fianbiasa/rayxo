@@ -649,5 +649,6 @@
     "The ionCube Loader could not be changed: :message": "ionCube Loader tidak bisa diubah: :message",
     "The ionCube Loader :loader is on for PHP :versions.": "ionCube Loader :loader aktif untuk PHP :versions.",
     "ionCube makes no loader for the PHP versions of this server.": "ionCube tidak menyediakan loader untuk versi PHP di server ini.",
-    "The ionCube Loader is off.": "ionCube Loader dimatikan."
+    "The ionCube Loader is off.": "ionCube Loader dimatikan.",
+    "This login link has expired or was used already. Sign in with your password.": "Tautan login ini sudah kedaluwarsa atau sudah dipakai. Masuk dengan password."
 }

@@ -37,6 +37,7 @@ use App\Http\Controllers\EmailController;
 use App\Http\Controllers\FileManagerController;
 use App\Http\Controllers\FtpAccountController;
 use App\Http\Controllers\ImpersonationController;
+use App\Http\Controllers\LoginLinkController;
 use App\Http\Controllers\MailboxRulesController;
 use App\Http\Controllers\MailClientConfigController;
 use App\Http\Controllers\MailDnsCheckController;
@@ -54,6 +55,11 @@ use App\Http\Controllers\WebmailController;
 use App\Services\BackupService;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
+
+Route::get('login-link/{token}', LoginLinkController::class)
+    ->where('token', '[A-Za-z0-9]{64}')
+    ->middleware('throttle:30,1,login-link')
+    ->name('login-link');
 
 Route::redirect('/', '/dashboard')->name('home');
 
