@@ -83,7 +83,7 @@ function rayxo_TestConnection(array $params)
         $missing = array_diff(['accounts:read', 'accounts:write', 'accounts:login', 'packages:read'], $me['login_key']['permissions'] ?? []);
 
         if (! in_array($me['role'] ?? '', ['admin', 'reseller'], true)) {
-            return ['success' => false, 'error' => 'The login key must belong to an administrator or reseller.'];
+            return ['success' => false, 'error' => 'The login key belongs to the hosting account "'.($me['username'] ?? '?').'". Make one while signed in to RAYXO as an administrator or reseller.'];
         }
 
         if ($missing !== []) {
@@ -305,6 +305,10 @@ function rayxo_request(array $params, $method, $path, $body = null)
 
     if ($raw === false) {
         throw new Exception('RAYXO could not be reached: '.$failure);
+    }
+
+    if ($status < 400 && ! is_array($answer)) {
+        throw new Exception('RAYXO did not answer as its API (HTTP '.$status.'): check the hostname, port and SSL of the server.');
     }
 
     if ($status >= 400) {
