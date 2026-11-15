@@ -4,24 +4,25 @@ namespace App\Services;
 
 use App\Agent\AgentClient;
 use App\Agent\AgentException;
-use App\Jobs\ImportCpanelAccount;
-use App\Models\CpanelImport;
+use App\Jobs\ImportAccount;
+use App\Models\AccountImport;
 use App\Models\Domain;
 use App\Models\ServerBackup;
 use App\Models\User;
 use App\Rules\ValidUsername;
-use App\Support\CpanelBackup;
+use App\Support\ForeignBackup;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Hosting accounts imported from cPanel. The administrator makes a backup
- * of the account in cPanel (pkgacct, or a full backup) and copies it into
- * the backups folder here. A job then has the agent read it, turns what it
- * holds into a RAYXO backup (see CpanelBackup), and makes the account again
- * from that, as from any backup of a deleted account.
+ * Hosting accounts imported from cPanel or DirectAdmin. The administrator
+ * makes a backup of the account there (pkgacct or a full backup in cPanel,
+ * Admin Backup in DirectAdmin) and copies it into the backups folder here.
+ * A job then has the agent read it, turns what it holds into a RAYXO
+ * backup (see ForeignBackup), and makes the account again from that, as
+ * from any backup of a deleted account.
  */
-class CpanelImportService
+class AccountImportService
 {
     /**
      * How long the agent may read or write one backup.
@@ -38,7 +39,7 @@ class CpanelImportService
 
     /**
      * The files in the backups folder that are not backups the panel
-     * knows: those copied there by hand, cPanel backups among them. The
+     * knows: those copied there by hand, backups of other panels among them. The
      * newest first.
      *
      * @return list<array{name: string, size: int, modified: int}>
@@ -69,27 +70,27 @@ class CpanelImportService
     }
 
     /**
-     * Queue the import of a cPanel backup in the folder. Without a username
-     * the account keeps its cPanel username, and without an email address
-     * the cPanel account's contact address.
+     * Queue the import of a backup of another panel in the folder. Without
+     * a username the account keeps the one it had there, and without an
+     * email address its contact address there.
      *
      * @param  array{file: string, username?: string|null, email?: string|null, password: string, package_id?: int|null}  $data
      *
      * @throws ValidationException
      */
-    public function start(array $data, User $actor): CpanelImport
+    public function start(array $data, User $actor): AccountImport
     {
         if (! in_array($data['file'], array_column($this->files(), 'name'), true)) {
             throw ValidationException::withMessages(['file' => __('This file is not in the backups folder.')]);
         }
 
-        $going = CpanelImport::query()->where('file', $data['file'])->whereIn('status', [CpanelImport::STATUS_QUEUED, CpanelImport::STATUS_READING, CpanelImport::STATUS_CONVERTING])->exists();
+        $going = AccountImport::query()->where('file', $data['file'])->whereIn('status', [AccountImport::STATUS_QUEUED, AccountImport::STATUS_READING, AccountImport::STATUS_CONVERTING])->exists();
 
         if ($going) {
             throw ValidationException::withMessages(['file' => __('This file is being imported already.')]);
         }
 
-        $import = new CpanelImport;
+        $import = new AccountImport;
         $import->forceFill([
             'actor_id' => $actor->id,
             'file' => $data['file'],
@@ -97,12 +98,12 @@ class CpanelImportService
             'email' => ($data['email'] ?? null) ?: null,
             'password_hash' => Hash::make($data['password']),
             'package_id' => $data['package_id'] ?? null,
-            'status' => CpanelImport::STATUS_QUEUED,
+            'status' => AccountImport::STATUS_QUEUED,
         ])->save();
 
-        $this->audit->record('backup.cpanel_import_started', null, ['file' => $import->file, 'username' => $import->username], $actor);
+        $this->audit->record('backup.import_started', null, ['file' => $import->file, 'username' => $import->username], $actor);
 
-        ImportCpanelAccount::dispatch($import);
+        ImportAccount::dispatch($import);
 
         return $import;
     }
@@ -110,11 +111,11 @@ class CpanelImportService
     /**
      * Import one account: the job queued by start().
      */
-    public function run(CpanelImport $import): void
+    public function run(AccountImport $import): void
     {
         $import->refresh();
 
-        if ($import->status !== CpanelImport::STATUS_QUEUED || $import->password_hash === null) {
+        if ($import->status !== AccountImport::STATUS_QUEUED || $import->password_hash === null) {
             return;
         }
 
@@ -125,18 +126,19 @@ class CpanelImportService
                 throw ValidationException::withMessages(['import' => __('No administrator is left to import the account for.')]);
             }
 
-            $this->step($import, CpanelImport::STATUS_READING);
-            $backup = CpanelBackup::read($this->call('backup.cpanel_inspect', ['name' => $import->file]));
+            $this->step($import, AccountImport::STATUS_READING);
+            $backup = ForeignBackup::read($this->call('backup.import_inspect', ['name' => $import->file]));
             $username = $import->username ?? $backup->user;
-            $import->forceFill(['cpanel_user' => $backup->user])->save();
+            $import->forceFill(['source' => $backup->kind(), 'source_user' => $backup->user])->save();
 
             $this->ensureFree($username, $import->email ?? $backup->contactEmail());
             $plan = $backup->plan($username, $this->phpVersions->available());
             $this->ensureDomainFree($plan['settings']['domains'][0]['name']);
 
-            $this->step($import, CpanelImport::STATUS_CONVERTING);
-            $name = $username.'-'.now()->format('Y-m-d-His').'-cpanel.tar.gz';
-            $converted = $this->call('backup.cpanel_convert', [
+            $this->step($import, AccountImport::STATUS_CONVERTING);
+            $name = $username.'-'.now()->format('Y-m-d-His').'-'.$backup->kind().'.tar.gz';
+            $converted = $this->call('backup.import_convert', [
+                'kind' => $backup->kind(),
                 'source' => $import->file,
                 'name' => $name,
                 'top' => $backup->top,
@@ -155,8 +157,8 @@ class CpanelImportService
                 'package_id' => $import->package_id,
             ], $actor);
 
-            $import->forceFill(['status' => CpanelImport::STATUS_RESTORING, 'user_id' => $account->id, 'password_hash' => null])->save();
-            $this->audit->record('backup.cpanel_imported', $account, ['file' => $import->file, 'username' => $account->username], $actor);
+            $import->forceFill(['status' => AccountImport::STATUS_RESTORING, 'user_id' => $account->id, 'password_hash' => null])->save();
+            $this->audit->record('backup.imported', $account, ['file' => $import->file, 'username' => $account->username], $actor);
         } catch (ValidationException $exception) {
             $this->fail($import, (string) collect($exception->errors())->flatten()->first());
         }
@@ -168,21 +170,21 @@ class CpanelImportService
      */
     public function closeStale(): void
     {
-        CpanelImport::query()
-            ->whereIn('status', [CpanelImport::STATUS_QUEUED, CpanelImport::STATUS_READING, CpanelImport::STATUS_CONVERTING])
+        AccountImport::query()
+            ->whereIn('status', [AccountImport::STATUS_QUEUED, AccountImport::STATUS_READING, AccountImport::STATUS_CONVERTING])
             ->where('updated_at', '<', now()->subHours(13))
-            ->each(fn (CpanelImport $import) => $this->fail($import, __('The import did not finish.')));
+            ->each(fn (AccountImport $import) => $this->fail($import, __('The import did not finish.')));
     }
 
     /**
      * Record that an import failed; the new password is forgotten.
      */
-    public function fail(CpanelImport $import, string $message): void
+    public function fail(AccountImport $import, string $message): void
     {
-        $import->forceFill(['status' => CpanelImport::STATUS_FAILED, 'error' => $message, 'password_hash' => null])->save();
+        $import->forceFill(['status' => AccountImport::STATUS_FAILED, 'error' => $message, 'password_hash' => null])->save();
     }
 
-    private function step(CpanelImport $import, string $status): void
+    private function step(AccountImport $import, string $status): void
     {
         $import->forceFill(['status' => $status])->save();
     }
@@ -197,7 +199,7 @@ class CpanelImportService
     private function ensureFree(string $username, ?string $email): void
     {
         if (preg_match(ValidUsername::PATTERN, $username) !== 1 || in_array($username, ValidUsername::RESERVED, true)) {
-            throw ValidationException::withMessages(['username' => __('The cPanel username :username cannot be used here; enter another username.', ['username' => $username])]);
+            throw ValidationException::withMessages(['username' => __('The username :username from the backup cannot be used here; enter another username.', ['username' => $username])]);
         }
 
         if (User::query()->where('username', $username)->exists()) {

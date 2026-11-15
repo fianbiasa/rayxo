@@ -19,11 +19,12 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { formatBytes, formatDateTime } from '@/lib/format';
 import { index as transfersIndex } from '@/routes/admin/transfers';
-import { store } from '@/routes/admin/transfers/cpanel';
+import { store } from '@/routes/admin/transfers/imports';
 
-type CpanelImport = {
+type AccountImport = {
     id: number;
     file: string;
+    source: string | null;
     username: string | null;
     status: string;
     error: string | null;
@@ -38,7 +39,7 @@ type BackupFile = {
 };
 
 type Props = {
-    imports: CpanelImport[];
+    imports: AccountImport[];
     going: boolean;
     files: { items: BackupFile[]; error: string | null };
     packages: { id: number; name: string }[];
@@ -54,7 +55,7 @@ const statusLabels: Record<string, string> = {
     failed: 'Gagal',
 };
 
-export default function CpanelImports({
+export default function AccountImports({
     imports,
     going,
     files,
@@ -106,11 +107,11 @@ export default function CpanelImports({
 
     return (
         <>
-            <Head title="Impor dari cPanel" />
+            <Head title="Impor akun" />
 
             <PageHeader
-                title="Impor dari cPanel"
-                description="Buat akun hosting di server ini dari backup akun cPanel."
+                title="Impor akun"
+                description="Buat akun hosting di server ini dari backup akun cPanel atau DirectAdmin."
                 actions={
                     <Button variant="outline" asChild>
                         <Link href={transfersIndex()}>
@@ -122,12 +123,12 @@ export default function CpanelImports({
             />
 
             <Panel
-                title="1. Siapkan backup cPanel"
-                description="Backup lengkap akun cPanel berisi file situs, database, email, dan pengaturannya. Server cPanel tidak diubah."
+                title="1. Siapkan backupnya"
+                description="Backup lengkap akun berisi file situs, database, email, dan pengaturannya. Server asal tidak diubah."
             >
                 <ol className="grid list-decimal gap-3 pl-5 text-sm">
                     <li>
-                        Di server cPanel, buat backupnya. Sebagai root (WHM):{' '}
+                        <strong>cPanel:</strong> sebagai root (WHM),{' '}
                         <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
                             /scripts/pkgacct username
                         </code>{' '}
@@ -137,6 +138,14 @@ export default function CpanelImports({
                         </code>
                         . Tanpa akses root, pemilik akun bisa membuatnya di
                         cPanel: Backup, lalu Download a Full Account Backup.
+                        <br />
+                        <strong>DirectAdmin:</strong> di Admin Backup/Transfer,
+                        buat backup akun yang dipilih ke folder lokal; hasilnya{' '}
+                        <code className="font-mono text-xs">
+                            /home/admin/admin_backups/user.admin.username.tar.zst
+                        </code>
+                        . Pemilik akun juga bisa membuatnya sendiri di
+                        DirectAdmin: Create/Restore Backups.
                     </li>
                     <li>
                         Salin file itu ke server ini, ke folder{' '}
@@ -145,7 +154,7 @@ export default function CpanelImports({
                         </code>
                         , misalnya dengan{' '}
                         <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all">
-                            scp cpmove-username.tar.gz root@server-ini:{folder}/
+                            scp file-backup root@server-ini:{folder}/
                         </code>
                         . Selama impor, disk server ini perlu ruang sekitar tiga
                         kali ukuran file itu.
@@ -156,12 +165,12 @@ export default function CpanelImports({
 
             <Panel
                 title="2. Impor akun"
-                description="Ikut pindah: domain utama, addon domain, subdomain, parked domain, file situs, database beserta pengguna dan password-nya, akun email beserta password dan isinya, forwarder, dan cron job. Tidak ikut: password login cPanel (diganti password di bawah), SSL (dibuat lagi), record DNS buatan sendiri, akun FTP, dan SSH key."
+                description="Ikut pindah: domain dan domain tambahan (addon), subdomain, parked domain atau pointer, file situs, database beserta pengguna dan password-nya, akun email beserta password dan isinya, forwarder, dan cron job. Tidak ikut: password login panel asal (diganti password di bawah), SSL (dibuat lagi), record DNS buatan sendiri, akun FTP, dan SSH key."
             >
                 <div className="grid gap-4 sm:max-w-xl">
                     <div className="grid gap-2">
                         <div className="flex items-center justify-between gap-2">
-                            <Label htmlFor="cpanel-file">Backup cPanel</Label>
+                            <Label htmlFor="import-file">File backup</Label>
                             <Button
                                 variant="ghost"
                                 size="sm"
@@ -184,7 +193,7 @@ export default function CpanelImports({
                                     setForm({ ...form, file })
                                 }
                             >
-                                <SelectTrigger id="cpanel-file">
+                                <SelectTrigger id="import-file">
                                     <SelectValue placeholder="Pilih file" />
                                 </SelectTrigger>
                                 <SelectContent className="rounded-xl">
@@ -204,9 +213,9 @@ export default function CpanelImports({
                     </div>
 
                     <div className="grid gap-2">
-                        <Label htmlFor="cpanel-username">Username</Label>
+                        <Label htmlFor="import-username">Username</Label>
                         <Input
-                            id="cpanel-username"
+                            id="import-username"
                             value={form.username}
                             onChange={(event) =>
                                 setForm({
@@ -214,35 +223,35 @@ export default function CpanelImports({
                                     username: event.target.value,
                                 })
                             }
-                            placeholder="Kosongkan untuk memakai username cPanel"
+                            placeholder="Kosongkan untuk memakai username di panel asal"
                             autoComplete="off"
                         />
                         <p className="text-xs text-muted-foreground">
                             Nama database dan penggunanya mengikuti username
-                            ini. Kalau berbeda dari cPanel, pengaturan situs
+                            ini. Kalau berbeda dari panel asal, pengaturan situs
                             yang menyebut nama database lama perlu disesuaikan.
                         </p>
                         <InputError message={errors.username} />
                     </div>
 
                     <div className="grid gap-2">
-                        <Label htmlFor="cpanel-email">Email</Label>
+                        <Label htmlFor="import-email">Email</Label>
                         <Input
-                            id="cpanel-email"
+                            id="import-email"
                             type="email"
                             value={form.email}
                             onChange={(event) =>
                                 setForm({ ...form, email: event.target.value })
                             }
-                            placeholder="Kosongkan untuk memakai email kontak di cPanel"
+                            placeholder="Kosongkan untuk memakai email kontak di panel asal"
                         />
                         <InputError message={errors.email} />
                     </div>
 
                     <div className="grid gap-2">
-                        <Label htmlFor="cpanel-password">Password panel</Label>
+                        <Label htmlFor="import-password">Password panel</Label>
                         <GeneratedPasswordInput
-                            id="cpanel-password"
+                            id="import-password"
                             value={form.password}
                             onChange={(password) =>
                                 setForm({ ...form, password })
@@ -255,14 +264,14 @@ export default function CpanelImports({
                     </div>
 
                     <div className="grid gap-2">
-                        <Label htmlFor="cpanel-package">Paket</Label>
+                        <Label htmlFor="import-package">Paket</Label>
                         <Select
                             value={form.package}
                             onValueChange={(value) =>
                                 setForm({ ...form, package: value })
                             }
                         >
-                            <SelectTrigger id="cpanel-package">
+                            <SelectTrigger id="import-package">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="rounded-xl">
@@ -281,7 +290,7 @@ export default function CpanelImports({
                         </Select>
                         <p className="text-xs text-muted-foreground">
                             Pastikan paketnya cukup untuk jumlah domain,
-                            database, dan akun email di cPanel.
+                            database, dan akun email di panel asal.
                         </p>
                         <InputError message={errors.package_id} />
                     </div>
@@ -310,7 +319,7 @@ export default function CpanelImports({
                 {imports.length === 0 ? (
                     <div className="flex flex-col items-center gap-2 px-6 pt-4 pb-10 text-center text-sm text-muted-foreground">
                         <FileArchive className="size-8" />
-                        Belum ada akun yang diimpor dari cPanel.
+                        Belum ada akun yang diimpor.
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
@@ -334,10 +343,15 @@ export default function CpanelImports({
                                         >
                                             {item.username ?? '–'}
                                         </td>
-                                        <td
-                                            className={`${tableStyles.td} font-mono text-xs`}
-                                        >
-                                            {item.file}
+                                        <td className={tableStyles.td}>
+                                            <div className="font-mono text-xs">
+                                                {item.file}
+                                            </div>
+                                            {item.source && (
+                                                <div className="text-xs text-muted-foreground">
+                                                    {item.source}
+                                                </div>
+                                            )}
                                         </td>
                                         <td
                                             className={`${tableStyles.td} whitespace-nowrap`}

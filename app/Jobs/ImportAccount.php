@@ -2,8 +2,8 @@
 
 namespace App\Jobs;
 
-use App\Models\CpanelImport;
-use App\Services\CpanelImportService;
+use App\Models\AccountImport;
+use App\Services\AccountImportService;
 use App\Services\ServerBackupService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -14,7 +14,7 @@ use Throwable;
  * queue: reading a backup of many gigabytes through, then writing it again
  * as a RAYXO backup, can take hours.
  */
-class ImportCpanelAccount implements ShouldQueue
+class ImportAccount implements ShouldQueue
 {
     use Queueable;
 
@@ -26,18 +26,18 @@ class ImportCpanelAccount implements ShouldQueue
 
     public bool $deleteWhenMissingModels = true;
 
-    public function __construct(public CpanelImport $import)
+    public function __construct(public AccountImport $import)
     {
         $this->onQueue(ServerBackupService::QUEUE);
     }
 
-    public function handle(CpanelImportService $imports): void
+    public function handle(AccountImportService $imports): void
     {
         $imports->run($this->import);
     }
 
     public function failed(?Throwable $exception): void
     {
-        app(CpanelImportService::class)->fail($this->import, __('The import did not finish.'));
+        app(AccountImportService::class)->fail($this->import, __('The import did not finish.'));
     }
 }

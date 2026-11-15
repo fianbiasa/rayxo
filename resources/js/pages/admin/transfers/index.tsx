@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { formatDateTime } from '@/lib/format';
 import { connect, store } from '@/routes/admin/transfers';
-import { index as cpanelIndex } from '@/routes/admin/transfers/cpanel';
+import { index as importsIndex } from '@/routes/admin/transfers/imports';
 
 type Transfer = {
     id: number;
@@ -114,9 +114,9 @@ export default function Transfers({ transfers, going }: Props) {
                 description="Pindahkan akun hosting dari server RAYXO lain ke server ini."
                 actions={
                     <Button variant="outline" asChild>
-                        <Link href={cpanelIndex()}>
+                        <Link href={importsIndex()}>
                             <FileArchive />
-                            Dari cPanel
+                            Dari cPanel atau DirectAdmin
                         </Link>
                     </Button>
                 }

@@ -7,12 +7,13 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Run the migrations: hosting accounts imported from a cPanel backup in
-     * the backups folder, one row each, with what was left out.
+     * Run the migrations: hosting accounts imported from a backup of cPanel
+     * or DirectAdmin in the backups folder, one row each, with what was
+     * left out.
      */
     public function up(): void
     {
-        Schema::create('cpanel_imports', function (Blueprint $table) {
+        Schema::create('account_imports', function (Blueprint $table) {
             $table->id();
             $table->foreignId('actor_id')->nullable()->constrained('users')->nullOnDelete();
             $table->string('file');
@@ -21,7 +22,8 @@ return new class extends Migration
             $table->string('password_hash')->nullable();
             $table->foreignId('package_id')->nullable()->constrained()->nullOnDelete();
             $table->string('status', 16)->index();
-            $table->string('cpanel_user', 64)->nullable();
+            $table->string('source', 16)->nullable();
+            $table->string('source_user', 64)->nullable();
             $table->foreignId('server_backup_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             $table->json('notes')->nullable();
@@ -35,6 +37,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('cpanel_imports');
+        Schema::dropIfExists('account_imports');
     }
 };

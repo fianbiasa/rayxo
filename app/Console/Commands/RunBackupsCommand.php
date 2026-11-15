@@ -3,8 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\BackupRun;
+use App\Services\AccountImportService;
 use App\Services\AccountTransferService;
-use App\Services\CpanelImportService;
 use App\Services\ServerBackupService;
 use App\Services\SystemBackupService;
 use Carbon\CarbonImmutable;
@@ -29,7 +29,7 @@ class RunBackupsCommand extends Command
      */
     protected $description = 'Start the automatic backups of every account when they are due';
 
-    public function handle(ServerBackupService $backups, SystemBackupService $system, AccountTransferService $transfers, CpanelImportService $imports): int
+    public function handle(ServerBackupService $backups, SystemBackupService $system, AccountTransferService $transfers, AccountImportService $imports): int
     {
         $backups->closeStale();
         $transfers->closeStale();

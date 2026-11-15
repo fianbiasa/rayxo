@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use Database\Factories\CpanelImportFactory;
+use Database\Factories\AccountImportFactory;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,20 +10,21 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * A hosting account imported from a cPanel backup the administrator copied
- * into the backups folder: the agent reads it, turns it into a RAYXO
- * backup, and the account is made again from that (see
- * CpanelImportService).
+ * A hosting account imported from a backup of cPanel or DirectAdmin the
+ * administrator copied into the backups folder: the agent reads it, turns
+ * it into a RAYXO backup, and the account is made again from that (see
+ * AccountImportService).
  *
  * @property int $id
  * @property int|null $actor_id
- * @property string $file The cPanel backup in the backups folder.
- * @property string|null $username The username here; null takes cPanel's.
- * @property string|null $email Null takes the cPanel account's contact address.
+ * @property string $file The backup in the backups folder.
+ * @property string|null $username The username here; null takes the one in the backup.
+ * @property string|null $email Null takes the contact address in the backup.
  * @property string|null $password_hash The new password, hashed; null once the account exists.
  * @property int|null $package_id
  * @property string $status One of the STATUS_ constants.
- * @property string|null $cpanel_user The username in cPanel, once read.
+ * @property string|null $source The panel that made the backup (cpanel, directadmin), once read.
+ * @property string|null $source_user The username there, once read.
  * @property int|null $server_backup_id The RAYXO backup it became.
  * @property int|null $user_id The account made here.
  * @property list<string>|null $notes What was left out or changed.
@@ -32,14 +33,14 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  */
 #[Hidden(['password_hash'])]
-class CpanelImport extends Model
+class AccountImport extends Model
 {
-    /** @use HasFactory<CpanelImportFactory> */
+    /** @use HasFactory<AccountImportFactory> */
     use HasFactory;
 
     public const STATUS_QUEUED = 'queued';
 
-    /** The agent reads the cPanel backup through. */
+    /** The agent reads the backup through. */
     public const STATUS_READING = 'reading';
 
     /** The agent writes the RAYXO backup. */

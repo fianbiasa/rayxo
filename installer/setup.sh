@@ -1097,7 +1097,7 @@ postfix postfix/main_mailer_type select Internet Site
 postfix postfix/mailname string $server_hostname
 DEBCONF
 
-    quietly "${apt[@]}" install nginx mariadb-server postfix opendkim opendkim-tools certbot python3 quota cron \
+    quietly "${apt[@]}" install nginx mariadb-server postfix opendkim opendkim-tools certbot python3 quota cron zstd \
         "php$PHP_VERSION-fpm" "php$PHP_VERSION-cli" "php$PHP_VERSION-common" "php$PHP_VERSION-mysql" \
         "php$PHP_VERSION-mbstring" "php$PHP_VERSION-xml" "php$PHP_VERSION-curl" "php$PHP_VERSION-intl" \
         "php$PHP_VERSION-zip" "php$PHP_VERSION-bcmath" "php$PHP_VERSION-opcache" "php$PHP_VERSION-readline" \
@@ -2390,7 +2390,10 @@ auth_mechanisms = plain login
 auth_username_format = %Lu
 first_valid_uid = 1000
 mail_location = maildir:~/Maildir
-mail_plugins = \$mail_plugins quota
+# zlib reads mail another panel stored compressed (DirectAdmin does by
+# default, cPanel can), brought here by an import; mail is saved here as it
+# comes, uncompressed.
+mail_plugins = \$mail_plugins quota zlib
 
 # A webmail session's token first (cheap, and Roundcube signs in on every
 # request), then the mailbox's own password.

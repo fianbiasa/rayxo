@@ -143,8 +143,8 @@ func serverBackupMethods(system accountSystem, helper fileHelper, databases data
 		"backup.server_space":   {Handler: actions.diskSpace},
 		"backup.server_import":  {Handler: actions.importUpload, Timeout: backupTimeout},
 		"backup.server_list":    {Handler: actions.list},
-		"backup.cpanel_inspect": {Handler: actions.cpanelInspect, Timeout: backupTimeout},
-		"backup.cpanel_convert": {Handler: actions.cpanelConvert, Timeout: backupTimeout},
+		"backup.import_inspect": {Handler: actions.importInspect, Timeout: backupTimeout},
+		"backup.import_convert": {Handler: actions.importConvert, Timeout: backupTimeout},
 	}
 }
 
@@ -239,8 +239,8 @@ type serverBackupFile struct {
 }
 
 // list implements backup.server_list: the backups in the folder, such as
-// those copied there from another server. Links and other files are left
-// out.
+// those copied there from another server or made by another panel. Links
+// and other files are left out.
 func (s serverBackupActions) list(_ context.Context, raw json.RawMessage) (any, error) {
 	if err := rpc.DecodeParams(raw, &struct{}{}); err != nil {
 		return nil, err
@@ -258,7 +258,7 @@ func (s serverBackupActions) list(_ context.Context, raw json.RawMessage) (any, 
 	found := []serverBackupFile{}
 
 	for _, entry := range entries {
-		if !entry.Type().IsRegular() || validateBackupName(entry.Name()) != nil {
+		if !entry.Type().IsRegular() || validateImportSource(entry.Name()) != nil {
 			continue
 		}
 

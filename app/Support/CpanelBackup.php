@@ -4,24 +4,22 @@ namespace App\Support;
 
 use App\Enums\DomainType;
 use App\Enums\PointerMode;
-use App\Rules\CronSchedule;
 use App\Rules\ValidDomain;
-use App\Services\BackupService;
 use Illuminate\Validation\ValidationException;
 
 /**
- * What a cPanel backup (cpmove-<user>.tar.gz) holds, as the agent read it
- * (backup.cpanel_inspect), and the RAYXO backup it becomes: the settings an
- * account is made from, the dumps it holds under their names here, and
- * where each part of the cPanel home goes in the home here.
+ * A cPanel backup (cpmove-<user>.tar.gz) as an import reads it: the
+ * account in cp/<user>, its domains in userdata/ (YAML), forwarders in
+ * va/<domain>, cron jobs in cron/<user>, database users in mysql.sql and
+ * mysql.sql-auth.json, and mailboxes in the shadow and quota files of
+ * each mail domain in the home.
  *
  * cPanel keeps the main domain's website in public_html, addon domains and
  * subdomains in the folder each was given, and the mail of each mailbox in
  * mail/<domain>/<mailbox>; here every website has domains/<name>/public_html
- * and every mailbox imap/<domain>/<mailbox>/Maildir. What cannot come along
- * is noted for the administrator.
+ * and every mailbox imap/<domain>/<mailbox>/Maildir.
  */
-final class CpanelBackup
+final class CpanelBackup extends ForeignBackup
 {
     /**
      * Folders and files at the top of a cPanel home that are cPanel's own,
@@ -35,134 +33,36 @@ final class CpanelBackup
         'access-logs', 'cpbackup-exclude.conf', 'etc', 'logs', 'mail', 'ssl', 'tmp', 'www',
     ];
 
-    /**
-     * Folders of a home here that belong to the panel.
-     */
-    public const RESERVED = ['domains', 'imap', 'backups', '.rayxo-backup', '.rayxo-restore'];
-
-    private const MAILBOX_HASH = '#^\$6\$[./0-9A-Za-z]{1,16}\$[./0-9A-Za-z]{86}$#D';
-
-    private const DATABASE_HASH = '/^\*[0-9A-F]{40}$/D';
-
-    private const LOCAL_PART = '/^[a-z0-9](?:[a-z0-9._+-]{0,62}[a-z0-9])?$/D';
-
-    /**
-     * @param  array<string, string>  $files  The small files read, by their name in the backup.
-     * @param  list<array{name: string, size: int}>  $dumps
-     * @param  list<array{name: string, type: string, bytes: int}>  $home
-     */
-    private function __construct(
-        public readonly string $top,
-        public readonly string $user,
-        private readonly array $files,
-        private readonly array $dumps,
-        private readonly array $home,
-        public readonly int $homeBytes,
-    ) {}
-
-    /**
-     * Read what the agent found in a cPanel backup.
-     *
-     * @param  array<string, mixed>  $inspection
-     *
-     * @throws ValidationException
-     */
-    public static function read(array $inspection): self
+    public function kind(): string
     {
-        $files = array_filter((array) ($inspection['files'] ?? []), fn (mixed $content, mixed $name): bool => is_string($name) && is_string($content), ARRAY_FILTER_USE_BOTH);
-        $accounts = array_values(array_filter(array_keys($files), fn (string $name): bool => str_starts_with($name, 'cp/')));
-        $user = count($accounts) === 1 ? substr($accounts[0], 3) : '';
-
-        if (! is_string($inspection['top'] ?? null) || preg_match('/^[a-z0-9][a-z0-9._-]{0,63}$/D', $user) !== 1) {
-            throw ValidationException::withMessages(['backup' => __('This file is not a cPanel backup.')]);
-        }
-
-        $dumps = [];
-        foreach ((array) ($inspection['databases'] ?? []) as $dump) {
-            if (is_array($dump) && is_string($dump['name'] ?? null)) {
-                $dumps[] = ['name' => $dump['name'], 'size' => (int) ($dump['size'] ?? 0)];
-            }
-        }
-
-        $home = [];
-        foreach ((array) ($inspection['home'] ?? []) as $entry) {
-            if (is_array($entry) && is_string($entry['name'] ?? null)) {
-                $home[] = ['name' => $entry['name'], 'type' => (string) ($entry['type'] ?? ''), 'bytes' => (int) ($entry['bytes'] ?? 0)];
-            }
-        }
-
-        return new self($inspection['top'], $user, $files, $dumps, $home, (int) ($inspection['bytes'] ?? 0));
+        return 'cpanel';
     }
 
-    /**
-     * The contact email address of the cPanel account.
-     */
+    public function panel(): string
+    {
+        return 'cPanel';
+    }
+
     public function contactEmail(): ?string
     {
-        $email = strtolower(trim($this->account()['CONTACTEMAIL'] ?? ''));
+        $email = strtolower($this->account()['CONTACTEMAIL'] ?? '');
 
         return filter_var($email, FILTER_VALIDATE_EMAIL) !== false ? $email : null;
     }
 
     /**
-     * The RAYXO backup the cPanel backup becomes for account username: its
-     * manifest and settings, the dumps it holds (from the name in cPanel to
-     * the name here), where the parts of the home go, and what was left out.
-     *
-     * @param  list<string>  $phpVersions  The PHP versions this server has.
-     * @return array{manifest: array<string, mixed>, settings: array<string, mixed>, databases: list<array{from: string, to: string}>, rules: list<array{from: string, to: string, mail: bool}>, notes: list<string>}
-     *
-     * @throws ValidationException
+     * @param  array<string, string>  $files
      */
-    public function plan(string $username, array $phpVersions): array
+    protected static function userIn(array $files): ?string
     {
-        $notes = [];
-        $domains = $this->domains($phpVersions, $notes);
-        $mailDomains = array_column(array_filter($domains, fn (array $domain): bool => $domain['type'] === DomainType::Domain->value), 'name');
-        [$rules, $docroots] = $this->websiteRules($domains, $username, $notes);
-        $databases = $this->databases($username, $notes);
-        $mailboxes = $this->mailboxes($mailDomains, $notes);
+        $accounts = array_values(array_filter(array_keys($files), fn (string $name): bool => str_starts_with($name, 'cp/')));
+        $user = count($accounts) === 1 ? substr($accounts[0], 3) : '';
 
-        foreach ($mailboxes as $mailbox) {
-            $rules[] = ['from' => 'mail/'.$mailbox['domain'].'/'.$mailbox['local_part'], 'to' => 'imap/'.$mailbox['domain'].'/'.$mailbox['local_part'].'/Maildir', 'mail' => true];
-        }
-
-        $rules = [...$rules, ...$this->homeRules(array_column($rules, 'from'), $notes)];
-        $users = $this->databaseUsers($username, $databases, $notes);
-        $forwarders = $this->forwarders($mailDomains, $notes);
-        $cronJobs = $this->cronJobs($username, $docroots, $notes);
-        $notes[] = self::note('DNS zones are made new here: records added in cPanel by hand (such as MX or TXT) must be added again.');
-
-        return [
-            'manifest' => [
-                'format' => BackupService::FORMAT,
-                'panel' => 'RAYXO',
-                'source' => 'cPanel',
-                'username' => $username,
-                'created_at' => now()->toIso8601String(),
-                'files' => true,
-                'email' => true,
-                'databases' => array_column($databases, 'to'),
-            ],
-            'settings' => [
-                'format' => BackupService::FORMAT,
-                'account' => ['name' => $this->user, 'email' => $this->contactEmail(), 'password_hash' => null, 'package' => null, 'owner' => null],
-                'domains' => array_map(fn (array $domain): array => array_diff_key($domain, ['docroot' => true]), $domains),
-                'databases' => array_column($databases, 'to'),
-                'database_users' => $users,
-                'mailboxes' => $mailboxes,
-                'forwarders' => $forwarders,
-                'cron_jobs' => $cronJobs,
-            ],
-            'databases' => $databases,
-            'rules' => $rules,
-            'notes' => $notes,
-        ];
+        return preg_match('/^[a-z0-9][a-z0-9._-]{0,63}$/D', $user) === 1 ? $user : null;
     }
 
     /**
-     * The websites: the main domain, addon domains, subdomains and parked
-     * domains, with the folder each had (relative to the home).
+     * The main domain, addon domains, subdomains and parked domains.
      *
      * @param  list<string>  $phpVersions
      * @param  list<string>  $notes
@@ -170,13 +70,13 @@ final class CpanelBackup
      *
      * @throws ValidationException
      */
-    private function domains(array $phpVersions, array &$notes): array
+    protected function domains(array $phpVersions, array &$notes): array
     {
         $main = self::yaml($this->files['userdata/main'] ?? '');
         $mainDomain = strtolower(self::scalar($main['main_domain'] ?? null) ?? ($this->account()['DNS'] ?? ''));
 
         if (! ValidDomain::isWellFormed($mainDomain)) {
-            throw ValidationException::withMessages(['backup' => __('The cPanel backup names no main domain.')]);
+            throw ValidationException::withMessages(['backup' => __('The backup names no main domain.')]);
         }
 
         $addons = is_array($main['addon_domains'] ?? null) ? $main['addon_domains'] : [];
@@ -257,195 +157,14 @@ final class CpanelBackup
     }
 
     /**
-     * Where the folder of each website goes. A folder two websites share
-     * goes to the first. Also returns each folder's full path then and now.
+     * The mailboxes in the shadow file of each mail domain, with their
+     * quotas from its quota file.
      *
-     * @param  list<array{name: string, type: string, docroot: string|null}>  $domains
-     * @param  list<string>  $notes
-     * @return array{0: list<array{from: string, to: string, mail: bool}>, 1: array<string, string>}
+     * @return list<array{domain: string, local_part: string, hash: string, quota_bytes: int|null}>
      */
-    private function websiteRules(array $domains, string $username, array &$notes): array
+    protected function mailboxEntries(): array
     {
-        $rules = [];
-        $docroots = [];
-
-        foreach ($domains as $domain) {
-            if ($domain['docroot'] === null) {
-                continue;
-            }
-
-            if (isset($docroots[$domain['docroot']])) {
-                $notes[] = self::note(':domain shared its folder with another website; its files went to that one.', ['domain' => $domain['name']]);
-
-                continue;
-            }
-
-            $docroots[$domain['docroot']] = '/home/'.$username.'/domains/'.$domain['name'].'/public_html';
-            $rules[] = ['from' => $domain['docroot'], 'to' => 'domains/'.$domain['name'].'/public_html', 'mail' => false];
-        }
-
-        return [$rules, $docroots];
-    }
-
-    /**
-     * The other files and folders at the top of the home stay where they
-     * are, but for cPanel's own and the panel's.
-     *
-     * @param  list<string>  $taken  Paths other rules move.
-     * @param  list<string>  $notes
-     * @return list<array{from: string, to: string, mail: bool}>
-     */
-    private function homeRules(array $taken, array &$notes): array
-    {
-        $rules = [];
-
-        foreach ($this->home as $entry) {
-            $name = $entry['name'];
-
-            if (in_array($name, $taken, true) || in_array($name, self::CPANEL_FILES, true)) {
-                continue;
-            }
-
-            if (in_array($name, self::RESERVED, true)) {
-                $notes[] = self::note('The folder :name of the cPanel home is left out: the panel uses that name.', ['name' => $name]);
-
-                continue;
-            }
-
-            if ($name === '.ssh') {
-                $notes[] = self::note('SSH keys (.ssh) are left out: add them again in the panel.');
-
-                continue;
-            }
-
-            $rules[] = ['from' => $name, 'to' => $name, 'mail' => false];
-        }
-
-        return $rules;
-    }
-
-    /**
-     * The databases with a dump, named for the account here.
-     *
-     * @param  list<string>  $notes
-     * @return list<array{from: string, to: string}>
-     */
-    private function databases(string $username, array &$notes): array
-    {
-        $databases = [];
-
-        foreach ($this->dumps as $dump) {
-            $to = $this->renamed($dump['name'], $username);
-
-            if ($to === null || strlen($to) > DatabaseNames::MAX_DATABASE) {
-                $notes[] = self::note('Database :name is left out: its name does not fit here.', ['name' => $dump['name']]);
-
-                continue;
-            }
-
-            if ($to !== $dump['name']) {
-                $notes[] = self::note('Database :from is now :to.', ['from' => $dump['name'], 'to' => $to]);
-            }
-
-            $databases[] = ['from' => $dump['name'], 'to' => $to];
-        }
-
-        return $databases;
-    }
-
-    /**
-     * The database users, with their passwords and the databases they had.
-     * The cPanel account's own MySQL login has no counterpart here.
-     *
-     * @param  list<array{from: string, to: string}>  $databases
-     * @param  list<string>  $notes
-     * @return list<array{name: string, password_hash: string, databases: list<string>}>
-     */
-    private function databaseUsers(string $username, array $databases, array &$notes): array
-    {
-        $names = array_column($databases, 'to', 'from');
-        $hashes = [];
-        $access = [];
-
-        foreach ((array) json_decode($this->files['mysql.sql-auth.json'] ?? '', true) as $user => $hosts) {
-            $hashes[(string) $user] = '';
-
-            foreach ((array) $hosts as $host) {
-                $hash = is_array($host) && is_string($host['pass_hash'] ?? null) && ctype_xdigit($host['pass_hash']) ? (string) hex2bin($host['pass_hash']) : '';
-
-                if (preg_match(self::DATABASE_HASH, $hash) === 1) {
-                    $hashes[(string) $user] = $hash;
-                }
-            }
-        }
-
-        foreach (preg_split('/\R/', $this->files['mysql.sql'] ?? '') ?: [] as $line) {
-            if (preg_match("/^GRANT .+ ON (.+?)\\.\\* TO '([^']+)'@'[^']*'(?: IDENTIFIED BY PASSWORD '([^']*)')?/", $line, $matches) !== 1) {
-                continue;
-            }
-
-            $user = $matches[2];
-            $hashes[$user] ??= '';
-
-            if ($hashes[$user] === '' && preg_match(self::DATABASE_HASH, $matches[3] ?? '') === 1) {
-                $hashes[$user] = $matches[3];
-            }
-
-            $database = str_replace(['\\_', '\\%'], ['_', '%'], trim($matches[1], '`'));
-
-            if (isset($names[$database])) {
-                $access[$user][$names[$database]] = true;
-            }
-        }
-
-        $users = [];
-
-        foreach ($hashes as $user => $hash) {
-            $user = (string) $user;
-
-            if ($user === $this->user) {
-                if (($access[$user] ?? []) !== []) {
-                    $notes[] = self::note('The cPanel login :name to MySQL is not moved: websites that sign in with it need another database user.', ['name' => $user]);
-                }
-
-                continue;
-            }
-
-            $to = $this->renamed($user, $username);
-
-            if ($to === null || strlen($to) > DatabaseNames::MAX_USER) {
-                $notes[] = self::note('Database user :name is left out: its name does not fit here.', ['name' => $user]);
-
-                continue;
-            }
-
-            if ($hash === '') {
-                $notes[] = self::note('Database user :name is left out: its password cannot be moved; make it again.', ['name' => $user]);
-
-                continue;
-            }
-
-            if ($to !== $user) {
-                $notes[] = self::note('Database user :from is now :to.', ['from' => $user, 'to' => $to]);
-            }
-
-            $users[] = ['name' => $to, 'password_hash' => $hash, 'databases' => array_keys($access[$user] ?? [])];
-        }
-
-        return $users;
-    }
-
-    /**
-     * The mailboxes of the account's domains, with their passwords. Mail
-     * here belongs to domains, not to subdomains or parked domains.
-     *
-     * @param  list<string>  $mailDomains
-     * @param  list<string>  $notes
-     * @return list<array{domain: string, local_part: string, password_hash: string, quota_mb: int|null}>
-     */
-    private function mailboxes(array $mailDomains, array &$notes): array
-    {
-        $mailboxes = [];
+        $entries = [];
 
         foreach ($this->files as $name => $content) {
             if (preg_match('#^homedir/etc/([^/]+)/shadow$#D', $name, $matches) !== 1) {
@@ -453,65 +172,77 @@ final class CpanelBackup
             }
 
             $domain = strtolower($matches[1]);
-            $quotas = $this->quotas($domain);
+            $quotas = $this->quotas($this->files['homedir/etc/'.$domain.'/quota'] ?? '');
 
-            foreach (preg_split('/\R/', $content) ?: [] as $line) {
+            foreach (self::lines($content) as $line) {
                 [$local, $hash] = array_pad(explode(':', $line, 3), 2, '');
                 $local = strtolower($local);
 
-                if ($local === '') {
-                    continue;
-                }
-
-                $address = $local.'@'.$domain;
-
-                if (! in_array($domain, $mailDomains, true)) {
-                    $notes[] = self::note('Mailbox :address is left out: mail here is for domains, not subdomains or parked domains.', ['address' => $address]);
-                } elseif (preg_match(self::LOCAL_PART, $local) !== 1) {
-                    $notes[] = self::note('Mailbox :address is left out: its name does not fit here.', ['address' => $address]);
-                } elseif (preg_match(self::MAILBOX_HASH, $hash) !== 1) {
-                    $notes[] = self::note('Mailbox :address is left out: its password cannot be moved; make it again.', ['address' => $address]);
-                } else {
-                    $mailboxes[] = ['domain' => $domain, 'local_part' => $local, 'password_hash' => $hash, 'quota_mb' => $quotas[$local] ?? null];
+                if ($local !== '') {
+                    $entries[] = ['domain' => $domain, 'local_part' => $local, 'hash' => $hash, 'quota_bytes' => $quotas[$local] ?? null];
                 }
             }
         }
 
-        return $mailboxes;
+        return $entries;
     }
 
     /**
-     * The quota of each mailbox of domain, in MB; none is no limit.
-     *
-     * @return array<string, int>
+     * @return array{from: string, to: string}
      */
-    private function quotas(string $domain): array
+    protected function mailRule(string $domain, string $localPart): array
     {
-        $quotas = [];
-
-        foreach (preg_split('/\R/', $this->files['homedir/etc/'.$domain.'/quota'] ?? '') ?: [] as $line) {
-            [$local, $bytes] = array_pad(explode(':', $line, 2), 2, '');
-
-            if (ctype_digit(trim($bytes)) && (int) $bytes > 0) {
-                $quotas[strtolower($local)] = (int) ceil((int) $bytes / 1048576);
-            }
-        }
-
-        return $quotas;
+        return ['from' => 'mail/'.$domain.'/'.$localPart, 'to' => 'imap/'.$domain.'/'.$localPart.'/Maildir'];
     }
 
     /**
-     * The forwarders of the account's domains that forward to addresses.
-     * Pipes to programs, files and the cPanel account's own mailbox have no
-     * counterpart here.
+     * The users in mysql.sql-auth.json and the grants of mysql.sql.
      *
-     * @param  list<string>  $mailDomains
+     * @return array<string, array{hash: string, databases: list<string>}>
+     */
+    protected function databaseLogins(): array
+    {
+        $logins = [];
+
+        foreach ((array) json_decode($this->files['mysql.sql-auth.json'] ?? '', true) as $user => $hosts) {
+            $logins[(string) $user] = ['hash' => '', 'databases' => []];
+
+            foreach ((array) $hosts as $host) {
+                $hash = is_array($host) && is_string($host['pass_hash'] ?? null) && ctype_xdigit($host['pass_hash']) ? (string) hex2bin($host['pass_hash']) : '';
+
+                if (str_starts_with($hash, '*')) {
+                    $logins[(string) $user]['hash'] = $hash;
+                }
+            }
+        }
+
+        foreach (self::lines($this->files['mysql.sql'] ?? '') as $line) {
+            if (preg_match("/^GRANT .+ ON (.+?)\\.\\* TO '([^']+)'@'[^']*'(?: IDENTIFIED BY PASSWORD '([^']*)')?/", $line, $matches) !== 1) {
+                continue;
+            }
+
+            $user = $matches[2];
+            $logins[$user] ??= ['hash' => '', 'databases' => []];
+
+            if ($logins[$user]['hash'] === '' && str_starts_with($matches[3] ?? '', '*')) {
+                $logins[$user]['hash'] = $matches[3];
+            }
+
+            $logins[$user]['databases'][] = str_replace(['\\_', '\\%'], ['_', '%'], trim($matches[1], '`'));
+        }
+
+        return $logins;
+    }
+
+    /**
+     * The forwarders in va/<domain>: address: targets.
+     *
      * @param  list<string>  $notes
-     * @return list<array{domain: string, local_part: string, destinations: list<string>}>
+     * @return list<array{domain: string, local_part: string, targets: list<string>}>
      */
-    private function forwarders(array $mailDomains, array &$notes): array
+    protected function forwarderEntries(array &$notes): array
     {
-        $forwarders = [];
+        $entries = [];
 
         foreach ($this->files as $name => $content) {
             if (preg_match('#^va/([^/]+)$#D', $name, $matches) !== 1) {
@@ -520,152 +251,38 @@ final class CpanelBackup
 
             $domain = strtolower($matches[1]);
 
-            foreach (preg_split('/\R/', $content) ?: [] as $line) {
+            foreach (self::lines($content) as $line) {
                 [$address, $targets] = array_pad(array_map('trim', explode(':', $line, 2)), 2, '');
                 $address = strtolower($address);
 
-                if ($address === '' || str_starts_with($address, '#')) {
-                    continue;
-                }
-
-                $destinations = [];
-                $others = [];
-
-                foreach (explode(',', $targets) as $target) {
-                    $target = trim($target, " \t\"'");
-
-                    if ($target === '' || $target === $this->user || str_starts_with($target, ':fail:') || str_starts_with($target, ':blackhole:')) {
-                        continue;
-                    }
-
-                    if (MailAddress::isValid(strtolower($target))) {
-                        $destinations[] = strtolower($target);
-                    } else {
-                        $others[] = $target;
-                    }
-                }
-
                 if ($address === '*') {
-                    if ($destinations !== [] || $others !== []) {
-                        $notes[] = self::note('The catch-all of :domain is left out: set it again in the panel.', ['domain' => $domain]);
-                    }
-
-                    continue;
-                }
-
-                if (! str_ends_with($address, '@'.$domain) || ($destinations === [] && $others === [])) {
-                    continue;
-                }
-
-                if (! in_array($domain, $mailDomains, true)) {
-                    $notes[] = self::note('Forwarder :address is left out: mail here is for domains, not subdomains or parked domains.', ['address' => $address]);
-
-                    continue;
-                }
-
-                if ($others !== []) {
-                    $notes[] = self::note('Forwarder :address loses :targets: only forwarding to addresses comes along.', ['address' => $address, 'targets' => implode(', ', $others)]);
-                }
-
-                if ($destinations !== []) {
-                    $forwarders[] = ['domain' => $domain, 'local_part' => substr($address, 0, -strlen('@'.$domain)), 'destinations' => array_values(array_unique($destinations))];
+                    $entries[] = ['domain' => $domain, 'local_part' => '*', 'targets' => explode(',', $targets)];
+                } elseif (str_ends_with($address, '@'.$domain) && ! str_starts_with($address, '#')) {
+                    $entries[] = ['domain' => $domain, 'local_part' => substr($address, 0, -strlen('@'.$domain)), 'targets' => explode(',', $targets)];
                 }
             }
         }
 
-        return $forwarders;
+        return $entries;
     }
 
     /**
-     * The cron jobs, with the paths of the old home made those here: the
-     * home, the folders of the websites and cPanel's PHP.
-     *
-     * @param  array<string, string>  $docroots  Folder in the old home => its full path here.
-     * @param  list<string>  $notes
-     * @return list<array{schedule: string, command: string, description: string, enabled: bool}>
+     * @return list<string>
      */
-    private function cronJobs(string $username, array $docroots, array &$notes): array
+    protected function cronLines(): array
     {
-        $jobs = [];
-        $changed = 0;
-        $home = $this->homedir();
-        uksort($docroots, fn (string $a, string $b): int => strlen($b) <=> strlen($a));
-
-        foreach (preg_split('/\R/', $this->files['cron/'.$this->user] ?? '') ?: [] as $line) {
-            $line = trim($line);
-
-            if ($line === '' || str_starts_with($line, '#') || preg_match('/^[A-Za-z_][A-Za-z0-9_]*\s*=/', $line) === 1) {
-                continue;
-            }
-
-            $special = str_starts_with($line, '@');
-            $parts = preg_split('/\s+/', $line, $special ? 2 : 6) ?: [];
-
-            if (count($parts) !== ($special ? 2 : 6)) {
-                continue;
-            }
-
-            $command = (string) array_pop($parts);
-            $schedule = implode(' ', $parts);
-
-            if ($special && ! in_array(strtolower($schedule), CronSchedule::SPECIALS, true)) {
-                $notes[] = self::note('Cron job ":command" is left out: its schedule :schedule does not exist here.', ['command' => $command, 'schedule' => $schedule]);
-
-                continue;
-            }
-
-            $moved = $command;
-
-            foreach ($docroots as $old => $new) {
-                $moved = (string) preg_replace('#'.preg_quote($home.'/'.$old, '#').'(?=[/\s\'";|&>]|$)#', $new, $moved);
-            }
-
-            $moved = (string) preg_replace('#'.preg_quote($home, '#').'(?=[/\s\'";|&>]|$)#', '/home/'.$username, $moved);
-            $moved = (string) preg_replace('#(?<![\w/.-])(?:/usr/local/bin/ea-php\d+|/opt/cpanel/ea-php\d+/root/usr/bin/php(?:-cgi)?|/usr/local/bin/php)(?=\s|$)#', 'php', $moved);
-
-            if ($moved !== $command) {
-                $changed++;
-            }
-
-            $jobs[] = ['schedule' => $schedule, 'command' => $moved, 'description' => 'cPanel', 'enabled' => true];
-        }
-
-        if ($changed > 0) {
-            $notes[] = self::note('Cron jobs changed to use the folders here: :count.', ['count' => $changed]);
-        }
-
-        return $jobs;
+        return self::lines($this->files['cron/'.$this->user] ?? '');
     }
 
     /**
-     * Name, which in cPanel starts with the cPanel username, for account
-     * username here. Null when it holds what names here cannot.
+     * @return list<string>
      */
-    private function renamed(string $name, string $username): ?string
+    protected function ownFiles(): array
     {
-        $rest = strtolower(str_starts_with($name, $this->user.'_') ? substr($name, strlen($this->user) + 1) : $name);
-
-        return preg_match('/^[a-z0-9_]+$/D', $rest) === 1 ? $username.'_'.$rest : null;
+        return self::CPANEL_FILES;
     }
 
-    /**
-     * @param  list<string>  $notes
-     */
-    private function wellFormed(string $domain, array &$notes): bool
-    {
-        if (ValidDomain::isWellFormed($domain)) {
-            return true;
-        }
-
-        $notes[] = self::note(':domain is left out: it is not a valid domain name.', ['domain' => $domain]);
-
-        return false;
-    }
-
-    /**
-     * The home of the account on the cPanel server.
-     */
-    private function homedir(): string
+    protected function homedir(): string
     {
         $main = self::yaml($this->files['userdata/main'] ?? '');
         $vhost = self::yaml($this->files['userdata/'.strtolower((string) self::scalar($main['main_domain'] ?? null))] ?? '');
@@ -681,15 +298,27 @@ final class CpanelBackup
      */
     private function account(): array
     {
-        $values = [];
+        return self::keyValues($this->files['cp/'.$this->user] ?? '');
+    }
 
-        foreach (preg_split('/\R/', $this->files['cp/'.$this->user] ?? '') ?: [] as $line) {
-            if (preg_match('/^([A-Z0-9_-]+)=(.*)$/D', $line, $matches) === 1) {
-                $values[$matches[1]] = trim($matches[2]);
+    /**
+     * The quota of each mailbox in a quota file, in bytes.
+     *
+     * @return array<string, int>
+     */
+    private function quotas(string $content): array
+    {
+        $quotas = [];
+
+        foreach (self::lines($content) as $line) {
+            [$local, $bytes] = array_pad(explode(':', $line, 2), 2, '');
+
+            if (ctype_digit(trim($bytes))) {
+                $quotas[strtolower($local)] = (int) $bytes;
             }
         }
 
-        return $values;
+        return $quotas;
     }
 
     /**
@@ -732,18 +361,6 @@ final class CpanelBackup
         }
 
         return $values;
-    }
-
-    /**
-     * A note for the administrator, in their language.
-     *
-     * @param  array<string, string|int>  $replace
-     */
-    private static function note(string $key, array $replace = []): string
-    {
-        $text = __($key, $replace);
-
-        return is_string($text) ? $text : $key;
     }
 
     private static function unquote(string $value): string

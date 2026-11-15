@@ -2,18 +2,18 @@
 
 namespace Database\Factories;
 
-use App\Models\CpanelImport;
+use App\Models\AccountImport;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 
 /**
- * @extends Factory<CpanelImport>
+ * @extends Factory<AccountImport>
  */
-class CpanelImportFactory extends Factory
+class AccountImportFactory extends Factory
 {
     /**
      * Define the model's default state: a cPanel backup queued to become an
-     * account here, under its cPanel username.
+     * account here, under the username it had.
      *
      * @return array<string, mixed>
      */
@@ -24,7 +24,7 @@ class CpanelImportFactory extends Factory
             'username' => null,
             'email' => null,
             'password_hash' => Hash::make('Kata-Sandi-Baru-2026'),
-            'status' => CpanelImport::STATUS_QUEUED,
+            'status' => AccountImport::STATUS_QUEUED,
         ];
     }
 }

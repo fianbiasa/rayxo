@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Admin\StoreCpanelImportRequest;
-use App\Models\CpanelImport;
+use App\Http\Requests\Admin\StoreAccountImportRequest;
+use App\Models\AccountImport;
 use App\Models\Package;
 use App\Models\User;
 use App\Services\AccountRestoreService;
-use App\Services\CpanelImportService;
+use App\Services\AccountImportService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -16,32 +16,38 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Hosting accounts imported from cPanel backups the administrator copied
- * into the backups folder (see CpanelImportService).
+ * Hosting accounts imported from backups of cPanel or DirectAdmin the
+ * administrator copied into the backups folder (see AccountImportService).
  */
-class CpanelImportController extends Controller
+class AccountImportController extends Controller
 {
     public function __construct(
-        private CpanelImportService $imports,
+        private AccountImportService $imports,
         private AccountRestoreService $restores,
     ) {}
 
     /**
-     * The files that may be cPanel backups, and the latest imports.
+     * The files that may be backups of another panel, and the latest
+     * imports.
      */
     public function index(Request $request): Response
     {
         /** @var User $actor */
         $actor = $request->user();
-        $imports = CpanelImport::query()->with('account:id,username,status')->latest('id')->limit(50)->get()->map(function (CpanelImport $import): array {
-            $progress = $import->status === CpanelImport::STATUS_RESTORING && $import->server_backup_id !== null
+        $imports = AccountImport::query()->with('account:id,username,status')->latest('id')->limit(50)->get()->map(function (AccountImport $import): array {
+            $progress = $import->status === AccountImport::STATUS_RESTORING && $import->server_backup_id !== null
                 ? $this->restores->progressOf($import->server_backup_id)
                 : null;
 
             return [
                 'id' => $import->id,
                 'file' => $import->file,
-                'username' => $import->account->username ?? $import->username ?? $import->cpanel_user,
+                'source' => match ($import->source) {
+                    'cpanel' => 'cPanel',
+                    'directadmin' => 'DirectAdmin',
+                    default => null,
+                },
+                'username' => $import->account->username ?? $import->username ?? $import->source_user,
                 'status' => $progress['status'] ?? $import->status,
                 'error' => $import->error ?? $progress['error'] ?? null,
                 'notes' => [...($import->notes ?? []), ...($progress['skipped'] ?? [])],
@@ -49,9 +55,9 @@ class CpanelImportController extends Controller
             ];
         });
 
-        return Inertia::render('admin/transfers/cpanel', [
+        return Inertia::render('admin/transfers/imports', [
             'imports' => $imports,
-            'going' => $imports->contains(fn (array $import): bool => ! in_array($import['status'], ['completed', CpanelImport::STATUS_FAILED], true)),
+            'going' => $imports->contains(fn (array $import): bool => ! in_array($import['status'], ['completed', AccountImport::STATUS_FAILED], true)),
             'files' => function (): array {
                 try {
                     return ['items' => $this->imports->files(), 'error' => null];
@@ -65,9 +71,9 @@ class CpanelImportController extends Controller
     }
 
     /**
-     * Import an account from a cPanel backup in the folder.
+     * Import an account from a backup of another panel in the folder.
      */
-    public function store(StoreCpanelImportRequest $request): RedirectResponse
+    public function store(StoreAccountImportRequest $request): RedirectResponse
     {
         /** @var User $actor */
         $actor = $request->user();
@@ -80,7 +86,7 @@ class CpanelImportController extends Controller
             'package_id' => $request->filled('package_id') ? $request->integer('package_id') : null,
         ], $actor);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Importing the cPanel backup. This page shows how it goes.')]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Importing the backup. This page shows how it goes.')]);
 
         return back();
     }
