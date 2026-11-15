@@ -645,5 +645,9 @@
     "Importing the backup. This page shows how it goes.": "Mengimpor backup. Halaman ini menampilkan perkembangannya.",
     ":domain used PHP choice :choice of DirectAdmin, which the backup does not name: it gets the default version; choose its version again.": ":domain memakai pilihan PHP ke-:choice di DirectAdmin, yang versinya tidak tercatat di backup: memakai versi bawaan; pilih lagi versinya.",
     "The automatic replies of :domain are left out: set them again in the panel.": "Balasan otomatis :domain tidak ikut: atur lagi di panel.",
-    "This took too long and was stopped partway, so only part of it may be done. Check the result before using it.": "Ini memakan waktu terlalu lama dan dihentikan di tengah jalan, jadi mungkin baru sebagian yang selesai. Periksa hasilnya sebelum dipakai."
+    "This took too long and was stopped partway, so only part of it may be done. Check the result before using it.": "Ini memakan waktu terlalu lama dan dihentikan di tengah jalan, jadi mungkin baru sebagian yang selesai. Periksa hasilnya sebelum dipakai.",
+    "The ionCube Loader could not be changed: :message": "ionCube Loader tidak bisa diubah: :message",
+    "The ionCube Loader :loader is on for PHP :versions.": "ionCube Loader :loader aktif untuk PHP :versions.",
+    "ionCube makes no loader for the PHP versions of this server.": "ionCube tidak menyediakan loader untuk versi PHP di server ini.",
+    "The ionCube Loader is off.": "ionCube Loader dimatikan."
 }

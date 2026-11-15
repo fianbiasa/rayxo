@@ -41,6 +41,9 @@ final class FakeAgentClient implements AgentClient
             'db.report' => $this->databaseReport(),
             'ftp.ensure_dir' => $this->ftpFolder((string) ($params['username'] ?? '')),
             'php.versions' => ['versions' => ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'], 'simulated' => true],
+            'php.ioncube' => ($params['enabled'] ?? false) === true
+                ? ['enabled' => true, 'versions' => ['7.4', '8.1', '8.2', '8.3', '8.4'], 'missing' => ['8.0', '8.5'], 'loader' => '15.0.0', 'simulated' => true]
+                : ['enabled' => false, 'versions' => [], 'missing' => [], 'loader' => '', 'simulated' => true],
             'service.status' => $this->serviceReport(),
             'mail.usage' => ['mailboxes' => [], 'simulated' => true],
             'usage.bandwidth' => ['web' => [], 'mail' => [], 'ftp' => [], 'cursor' => [], 'complete' => true, 'simulated' => true],

@@ -66,6 +66,10 @@ func Register(registry *rpc.Registry, config Config) {
 		registry.Register(name, method)
 	}
 
+	for name, method := range ionCubeMethods(newIonCube(), web.PHPVersions) {
+		registry.Register(name, method)
+	}
+
 	changer := config.Reconfigure
 	if changer == nil {
 		changer = reconfigure.New(reconfigure.DefaultConfig())

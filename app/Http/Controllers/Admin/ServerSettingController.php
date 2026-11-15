@@ -72,6 +72,7 @@ class ServerSettingController extends Controller
                 'suspend_over_limit' => $this->bandwidth->suspendsOverLimit(),
             ],
             'database_remote_access' => $this->databaseTools->remoteAccessEnabled(),
+            'ioncube' => $this->settings->ionCube(),
             'telegram_bot' => $this->telegram->username(),
             'mail_limits' => [
                 ...$this->settings->mailSendLimits(),
@@ -308,6 +309,25 @@ class ServerSettingController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => $validated['enabled']
             ? __('MariaDB now answers from outside, for the hosts accounts allow.')
             : __('MariaDB only answers on this server again.')]);
+
+        return back();
+    }
+
+    /**
+     * Turn the ionCube Loader on or off for every PHP version.
+     */
+    public function updateIonCube(Request $request): RedirectResponse
+    {
+        $validated = $request->validate(['enabled' => ['required', 'boolean']]);
+        $state = $this->settings->setIonCube((bool) $validated['enabled'], $request->user());
+
+        $message = match (true) {
+            $state['enabled'] => __('The ionCube Loader :loader is on for PHP :versions.', ['loader' => (string) $state['loader'], 'versions' => implode(', ', $state['versions'])]),
+            (bool) $validated['enabled'] => __('ionCube makes no loader for the PHP versions of this server.'),
+            default => __('The ionCube Loader is off.'),
+        };
+
+        Inertia::flash('toast', ['type' => $state['enabled'] || ! $validated['enabled'] ? 'success' : 'warning', 'message' => $message]);
 
         return back();
     }

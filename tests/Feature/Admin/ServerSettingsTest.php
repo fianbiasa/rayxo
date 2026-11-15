@@ -45,6 +45,53 @@ class ServerSettingsTest extends TestCase
         $this->assertDatabaseCount('tasks', 0);
     }
 
+    public function test_the_administrator_turns_the_ioncube_loader_on_and_off()
+    {
+        $admin = User::factory()->admin()->create();
+        $calls = [];
+        $this->mock(AgentClient::class, function (MockInterface $mock) use (&$calls): void {
+            $mock->shouldReceive('call')->andReturnUsing(function (string $method, array $params) use (&$calls): array {
+                $calls[] = [$method, $params];
+
+                return ($params['enabled'] ?? false) === true
+                    ? ['enabled' => true, 'versions' => ['8.3', '8.4'], 'missing' => ['8.5'], 'loader' => '15.0.0']
+                    : ['enabled' => false, 'versions' => [], 'missing' => [], 'loader' => ''];
+            });
+        });
+
+        $this->actingAs($admin)
+            ->put(route('admin.server-settings.ioncube'), ['enabled' => true])
+            ->assertSessionHasNoErrors()
+            ->assertInertiaFlash('toast.message', 'The ionCube Loader 15.0.0 is on for PHP 8.3, 8.4.');
+
+        $this->assertSame(['enabled' => true, 'versions' => ['8.3', '8.4'], 'missing' => ['8.5'], 'loader' => '15.0.0'], app(ServerSettingsService::class)->ionCube());
+        $this->assertDatabaseHas(AuditLog::class, ['action' => 'server.ioncube_changed', 'actor_id' => $admin->id]);
+
+        $this->actingAs($admin)
+            ->put(route('admin.server-settings.ioncube'), ['enabled' => false])
+            ->assertInertiaFlash('toast.message', 'The ionCube Loader is off.');
+
+        $this->assertSame([['php.ioncube', ['enabled' => true]], ['php.ioncube', ['enabled' => false]]], $calls);
+        $this->assertFalse(app(ServerSettingsService::class)->ionCube()['enabled']);
+
+        $this->actingAs(User::factory()->create())
+            ->put(route('admin.server-settings.ioncube'), ['enabled' => true])
+            ->assertForbidden();
+    }
+
+    public function test_an_ioncube_loader_that_cannot_be_downloaded_says_why()
+    {
+        $this->mock(AgentClient::class, fn (MockInterface $mock) => $mock
+            ->shouldReceive('call')->once()
+            ->andThrow(new AgentException('download the ionCube Loader: HTTP 503', -32000)));
+
+        $this->actingAs(User::factory()->admin()->create())
+            ->put(route('admin.server-settings.ioncube'), ['enabled' => true])
+            ->assertSessionHasErrors(['enabled' => 'The ionCube Loader could not be changed: download the ionCube Loader: HTTP 503']);
+
+        $this->assertFalse(app(ServerSettingsService::class)->ionCube()['enabled']);
+    }
+
     public function test_the_page_shows_what_the_server_reports_and_the_upload_sizes()
     {
         $this->app->instance(AgentClient::class, new FakeAgentClient);

@@ -3,11 +3,13 @@
 namespace App\Services;
 
 use App\Agent\AgentClient;
+use App\Agent\AgentException;
 use App\Enums\TaskStatus;
 use App\Models\Setting;
 use App\Models\Task;
 use App\Models\User;
 use App\Support\PhpSettings;
+use Illuminate\Validation\ValidationException;
 
 /**
  * The server-wide settings the admin changes in the panel: the timezone
@@ -25,6 +27,11 @@ class ServerSettingsService
      * The upload and POST size of websites that did not choose their own.
      */
     public const PHP_UPLOAD_DEFAULT = 'php.upload_default';
+
+    /**
+     * Whether the ionCube Loader is on, as the agent last reported it.
+     */
+    public const IONCUBE = 'php.ioncube';
 
     /**
      * How many recipients each hosting account may send mail to per 24
@@ -82,6 +89,57 @@ class ServerSettingsService
     public function phpDefaults(): array
     {
         return PhpSettings::defaults($this->phpUploadDefault());
+    }
+
+    /**
+     * Whether the ionCube Loader is on, for which PHP versions, and which
+     * loader it is, as the agent last reported.
+     *
+     * @return array{enabled: bool, versions: list<string>, missing: list<string>, loader: string|null}
+     */
+    public function ionCube(): array
+    {
+        $saved = $this->get(self::IONCUBE);
+
+        return $this->ionCubeState(is_array($saved) ? $saved : []);
+    }
+
+    /**
+     * Turn the ionCube Loader on, which the agent downloads from ionCube,
+     * or off, for every PHP version of the server.
+     *
+     * @return array{enabled: bool, versions: list<string>, missing: list<string>, loader: string|null}
+     *
+     * @throws ValidationException
+     */
+    public function setIonCube(bool $enabled, User $actor): array
+    {
+        try {
+            $state = $this->ionCubeState($this->agent->call('php.ioncube', ['enabled' => $enabled], 900));
+        } catch (AgentException $exception) {
+            throw ValidationException::withMessages(['enabled' => __('The ionCube Loader could not be changed: :message', ['message' => $exception->getMessage()])]);
+        }
+
+        $this->put(self::IONCUBE, $state);
+        $this->audit->record('server.ioncube_changed', null, ['enabled' => $state['enabled'], 'versions' => $state['versions'], 'loader' => $state['loader']], $actor);
+
+        return $state;
+    }
+
+    /**
+     * @param  array<mixed>  $state
+     * @return array{enabled: bool, versions: list<string>, missing: list<string>, loader: string|null}
+     */
+    private function ionCubeState(array $state): array
+    {
+        $versions = fn (mixed $list): array => array_values(array_filter((array) $list, fn (mixed $version): bool => is_string($version) && preg_match('/^\d+\.\d+$/D', $version) === 1));
+
+        return [
+            'enabled' => ($state['enabled'] ?? false) === true,
+            'versions' => $versions($state['versions'] ?? []),
+            'missing' => $versions($state['missing'] ?? []),
+            'loader' => is_string($state['loader'] ?? null) && $state['loader'] !== '' ? $state['loader'] : null,
+        ];
     }
 
     /**

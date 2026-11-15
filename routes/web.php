@@ -361,6 +361,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('server-settings/database-remote-access', [ServerSettingController::class, 'updateDatabaseRemoteAccess'])
             ->middleware('throttle:5,1,server-database-remote')
             ->name('server-settings.database-remote-access');
+        Route::put('server-settings/ioncube', [ServerSettingController::class, 'updateIonCube'])
+            ->middleware('throttle:5,1,server-ioncube')
+            ->name('server-settings.ioncube');
         Route::put('server-settings/php-uploads', [ServerSettingController::class, 'updatePhpUploads'])
             ->middleware('throttle:10,1,server-uploads')
             ->name('server-settings.php-uploads');

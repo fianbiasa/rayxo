@@ -48,6 +48,7 @@ import {
     databaseRemoteAccess as updateDatabaseRemoteAccess,
     hostname as updateHostname,
     hostnameCertificate,
+    ioncube as updateIonCube,
     mailLimits as updateMailLimits,
     nameservers as updateNameservers,
     phpUploads,
@@ -108,7 +109,15 @@ type Props = {
     mail_limits: MailLimits;
     bandwidth: { suspend_over_limit: boolean };
     database_remote_access: boolean;
+    ioncube: IonCube;
     telegram_bot: string | null;
+};
+
+type IonCube = {
+    enabled: boolean;
+    versions: string[];
+    missing: string[];
+    loader: string | null;
 };
 
 type MailLimits = {
@@ -128,6 +137,7 @@ export default function ServerSettings({
     mail_limits,
     bandwidth,
     database_remote_access,
+    ioncube,
     telegram_bot,
 }: Props) {
     const { start, stop } = usePoll(
@@ -208,6 +218,8 @@ export default function ServerSettings({
             <BandwidthPanel suspendOverLimit={bandwidth.suspend_over_limit} />
 
             <DatabaseRemotePanel enabled={database_remote_access} />
+
+            <IonCubePanel ioncube={ioncube} />
 
             <TelegramPanel bot={telegram_bot} />
 
@@ -899,6 +911,56 @@ function TelegramPanel({ bot }: { bot: string | null }) {
  * Whether MariaDB answers from outside the server, for the hosts accounts
  * allow on their Databases page. Changing it restarts MariaDB.
  */
+/**
+ * The ionCube Loader, which software encoded with ionCube (such as WHMCS)
+ * needs. It is ionCube's own software, downloaded from ionCube only once
+ * the administrator turns it on.
+ */
+function IonCubePanel({ ioncube }: { ioncube: IonCube }) {
+    return (
+        <Panel
+            title="ionCube Loader"
+            description="Dibutuhkan aplikasi PHP yang dienkripsi dengan ionCube, misalnya WHMCS. ionCube Loader adalah perangkat lunak gratis tapi tertutup milik ionCube Ltd; saat dinyalakan, server mengunduhnya dari ioncube.com dan memasangnya untuk semua versi PHP yang didukung ionCube."
+        >
+            <Form
+                {...updateIonCube.form()}
+                options={{ preserveScroll: true }}
+                transform={() => ({ enabled: !ioncube.enabled })}
+                className="flex flex-wrap items-center gap-4"
+            >
+                {({ processing, errors }) => (
+                    <>
+                        <StatusBadge
+                            status={ioncube.enabled ? 'active' : 'neutral'}
+                            label={
+                                ioncube.enabled
+                                    ? `Aktif${ioncube.loader ? ` (v${ioncube.loader})` : ''}`
+                                    : 'Mati'
+                            }
+                        />
+                        <Button
+                            type="submit"
+                            variant={ioncube.enabled ? 'outline' : 'default'}
+                            disabled={processing}
+                        >
+                            {processing && <Spinner />}
+                            {ioncube.enabled
+                                ? 'Matikan ionCube'
+                                : 'Nyalakan ionCube'}
+                        </Button>
+                        <p className="w-full text-xs text-muted-foreground">
+                            {ioncube.enabled
+                                ? `Dipakai PHP ${ioncube.versions.join(', ')}.${ioncube.missing.length > 0 ? ` Tidak tersedia untuk PHP ${ioncube.missing.join(', ')}.` : ''}`
+                                : 'Proses ini mengunduh sekitar 20 MB dan memuat ulang semua pool PHP, jadi bisa memakan waktu sekitar satu menit.'}
+                        </p>
+                        <InputError message={errors.enabled} />
+                    </>
+                )}
+            </Form>
+        </Panel>
+    );
+}
+
 function DatabaseRemotePanel({ enabled }: { enabled: boolean }) {
     return (
         <Panel
