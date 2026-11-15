@@ -87,9 +87,9 @@ class ResellerAuthorizationTest extends TestCase
 
         // Six account routes against four accounts, three package routes
         // against two packages, one address route against two addresses,
-        // two DNS template routes against two records, four backup routes
+        // two DNS template routes against two records, five backup routes
         // against three backups (one of a deleted account).
-        $this->assertSame(48, $checked);
+        $this->assertSame(51, $checked);
 
         // Nothing changed hands, was queued, removed, or signed in as.
         $this->assertSame(AccountStatus::Active, $otherAccount->fresh()->status);

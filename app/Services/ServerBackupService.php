@@ -83,6 +83,7 @@ class ServerBackupService
         private BackupService $backups,
         private TaskDispatcher $tasks,
         private NotificationService $notifications,
+        private RemoteBackupService $remote,
     ) {}
 
     /**
@@ -416,11 +417,16 @@ class ServerBackupService
             'finished_at' => now(),
         ])->save();
 
+        if (! $backup->isManual()) {
+            $this->remote->queueCopy($backup);
+        }
+
         if ($backup->isManual()) {
             $manual = fn () => ServerBackup::query()
                 ->whereNull('backup_run_id')
                 ->where('user_id', $account->id)
-                ->where('status', ServerBackupStatus::Completed);
+                ->where('status', ServerBackupStatus::Completed)
+                ->where('on_server', true);
 
             $kept = $manual()->orderByDesc('id')->limit(self::MANUAL_KEEP)->pluck('id');
 
@@ -497,8 +503,9 @@ class ServerBackupService
 
     /**
      * Delete the automatic backups of each account beyond the newest it
-     * keeps. Backups of deleted accounts stay until they are deleted by
-     * hand; failed ones are forgotten after a month.
+     * keeps on this server; those with a copy on the remote destination
+     * stay there. Backups of deleted accounts stay until they are deleted
+     * by hand; failed ones are forgotten after a month.
      */
     public function rotate(): void
     {
@@ -508,8 +515,9 @@ class ServerBackupService
             ->whereNotNull('backup_run_id')
             ->whereNotNull('user_id')
             ->where('status', ServerBackupStatus::Completed)
+            ->where('on_server', true)
             ->orderByDesc('id')
-            ->get(['id', 'user_id', 'name'])
+            ->get()
             ->groupBy('user_id')
             ->flatMap(fn (Collection $backups): Collection => $backups->slice($keep));
 
@@ -543,6 +551,10 @@ class ServerBackupService
     {
         if ($backup->status !== ServerBackupStatus::Completed) {
             throw ValidationException::withMessages(['backup' => __('Only a finished backup can be restored.')]);
+        }
+
+        if (! $backup->on_server) {
+            throw ValidationException::withMessages(['backup' => __('This backup is only on the remote destination; take it back to the server first.')]);
         }
 
         try {
@@ -686,6 +698,7 @@ class ServerBackupService
             $backup = ServerBackup::query()
                 ->where('user_id', $account->id)
                 ->where('status', ServerBackupStatus::Completed)
+                ->where('on_server', true)
                 ->latest('id')
                 ->first();
 
@@ -707,7 +720,8 @@ class ServerBackupService
     }
 
     /**
-     * Delete a backup for good.
+     * Delete a backup for good: on this server, and its copy on the remote
+     * destination.
      *
      * @throws ValidationException
      */
@@ -716,6 +730,8 @@ class ServerBackupService
         if ($backup->status === ServerBackupStatus::Running) {
             throw ValidationException::withMessages(['backup' => __('Wait until this backup is done.')]);
         }
+
+        $this->remote->deleteCopy($backup);
 
         try {
             $this->agent->call('backup.server_delete', ['names' => [$backup->name]], 60);
@@ -729,8 +745,9 @@ class ServerBackupService
     }
 
     /**
-     * Delete the files of backups, then forget them. Those the agent could
-     * not delete stay for the next try.
+     * Delete the files of backups, then forget them, unless they have a
+     * copy on the remote destination. Those the agent could not delete stay
+     * for the next try.
      *
      * @param  SupportCollection<int, ServerBackup>  $backups
      */
@@ -745,7 +762,7 @@ class ServerBackupService
                 continue;
             }
 
-            ServerBackup::query()->whereKey($chunk->pluck('id')->all())->delete();
+            RemoteBackupService::leftOnServer(ServerBackup::query()->whereKey($chunk->pluck('id')->all())->get());
         }
     }
 

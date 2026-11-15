@@ -146,3 +146,27 @@ func TestRunInputFeedsStdinAndKeepsStderrForErrors(t *testing.T) {
 		t.Fatalf("got %#v", err)
 	}
 }
+
+func TestRunEnvAddsToTheFixedEnvironmentOnly(t *testing.T) {
+	t.Setenv("RAYXO_SECRET", "do-not-pass-on")
+
+	output, err := runner.RunEnv(context.Background(), []string{"RCLONE_CONFIG_RX_TYPE=local"}, nil, "/usr/bin/env")
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	for _, want := range []string{"RCLONE_CONFIG_RX_TYPE=local", "LC_ALL=C"} {
+		if !strings.Contains(string(output), want) {
+			t.Errorf("expected %s in %q", want, output)
+		}
+	}
+
+	if strings.Contains(string(output), "RAYXO_SECRET") {
+		t.Errorf("the agent environment leaked into the program: %q", output)
+	}
+
+	again, _ := runner.Run(context.Background(), "/usr/bin/env")
+	if strings.Contains(string(again), "RCLONE_CONFIG_RX_TYPE") {
+		t.Errorf("an added variable stayed for the next program: %q", again)
+	}
+}

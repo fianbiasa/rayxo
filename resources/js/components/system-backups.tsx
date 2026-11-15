@@ -11,6 +11,11 @@ import { useState } from 'react';
 import { BackupChoice } from '@/components/backup-restore-dialog';
 import InputError from '@/components/input-error';
 import { Panel, tableStyles } from '@/components/panel';
+import {
+    FetchFromRemoteButton,
+    RemoteCopyNote,
+} from '@/components/remote-backups';
+import type { RemoteCopy } from '@/components/remote-backups';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,11 +35,12 @@ import { restoreAll, scan } from '@/routes/admin/backups';
 import {
     destroy,
     download,
+    fetch as fetchFromRemote,
     settings as updateSettings,
     store,
 } from '@/routes/admin/backups/system';
 
-export type SystemBackup = {
+export type SystemBackup = RemoteCopy & {
     id: number;
     name: string;
     status: 'queued' | 'running' | 'completed' | 'failed';
@@ -192,27 +198,43 @@ export function SystemBackupPanel({ system }: { system: SystemBackups }) {
                                                     {backup.error}
                                                 </p>
                                             )}
+                                            <RemoteCopyNote copy={backup} />
                                         </td>
                                         <td className={tableStyles.td}>
                                             <div className="flex justify-end gap-1">
                                                 {backup.status ===
-                                                    'completed' && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        asChild
-                                                    >
-                                                        <a
-                                                            href={
-                                                                download(
+                                                    'completed' &&
+                                                    !backup.on_server &&
+                                                    backup.remote_status ===
+                                                        'uploaded' && (
+                                                        <FetchFromRemoteButton
+                                                            url={
+                                                                fetchFromRemote(
                                                                     backup.id,
                                                                 ).url
                                                             }
+                                                        />
+                                                    )}
+                                                {backup.status ===
+                                                    'completed' &&
+                                                    backup.on_server && (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            asChild
                                                         >
-                                                            <Download /> Unduh
-                                                        </a>
-                                                    </Button>
-                                                )}
+                                                            <a
+                                                                href={
+                                                                    download(
+                                                                        backup.id,
+                                                                    ).url
+                                                                }
+                                                            >
+                                                                <Download />{' '}
+                                                                Unduh
+                                                            </a>
+                                                        </Button>
+                                                    )}
                                                 {backup.status !==
                                                     'running' && (
                                                     <Button

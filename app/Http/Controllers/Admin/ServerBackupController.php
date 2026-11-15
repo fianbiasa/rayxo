@@ -16,6 +16,7 @@ use App\Models\Task;
 use App\Models\User;
 use App\Services\AccountRestoreService;
 use App\Services\AuditLogger;
+use App\Services\RemoteBackupService;
 use App\Services\ServerBackupService;
 use App\Services\SystemBackupService;
 use Carbon\CarbonImmutable;
@@ -44,6 +45,7 @@ class ServerBackupController extends Controller
         private ServerBackupService $backups,
         private AccountRestoreService $restores,
         private SystemBackupService $systemBackups,
+        private RemoteBackupService $remote,
         private AuditLogger $audit,
     ) {}
 
@@ -77,6 +79,9 @@ class ServerBackupController extends Controller
                 'skipped' => $backup->skipped,
                 'error' => $backup->error,
                 'automatic' => ! $backup->isManual(),
+                'on_server' => $backup->on_server,
+                'remote_status' => $backup->remote_status?->value,
+                'remote_error' => $backup->remote_error,
                 'can_delete' => Gate::forUser($viewer)->allows('delete', $backup),
                 'created_at' => $backup->created_at?->toIso8601String(),
             ]);
@@ -125,7 +130,7 @@ class ServerBackupController extends Controller
             'estimate' => [
                 'accounts' => $accounts->count(),
                 'per_run' => $this->backups->estimate($accounts),
-                'stored' => (int) ServerBackup::query()->where('status', ServerBackupStatus::Completed)->sum('size_bytes'),
+                'stored' => (int) ServerBackup::query()->where('status', ServerBackupStatus::Completed)->where('on_server', true)->sum('size_bytes'),
             ],
             'runs' => BackupRun::query()->latest('id')->limit(5)->get()->map(fn (BackupRun $run): array => [
                 'id' => $run->id,
@@ -148,10 +153,36 @@ class ServerBackupController extends Controller
                     'status' => $backup->status->value,
                     'size' => $backup->size_bytes,
                     'error' => $backup->error,
+                    'on_server' => $backup->on_server,
+                    'remote_status' => $backup->remote_status?->value,
+                    'remote_error' => $backup->remote_error,
                     'created_at' => $backup->created_at?->toIso8601String(),
                 ]),
             ],
+            'remote' => [
+                ...$this->remote->settings(),
+                'keep_max' => RemoteBackupService::MAX_KEEP,
+            ],
+            'remote_servers' => Inertia::optional(fn (): array => $this->remote->servers()),
+            'remote_listing' => Inertia::optional(fn (): ?array => $this->remoteListing($request)),
         ]);
+    }
+
+    /**
+     * The backups in the server's folder on the remote destination the
+     * page asked to browse.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function remoteListing(Request $request): ?array
+    {
+        $server = (string) $request->query('browse', '');
+
+        if (preg_match('/^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/', $server) !== 1) {
+            return null;
+        }
+
+        return $this->remote->listing($server);
     }
 
     /**

@@ -17,6 +17,11 @@ import {
     BackupNowPanel,
     ServerBackupsPanel,
 } from '@/components/server-backups';
+import { RemoteBackupPanel } from '@/components/remote-backups';
+import type {
+    RemoteListing,
+    RemoteSettings,
+} from '@/components/remote-backups';
 import type { ServerBackupsProps } from '@/components/server-backups';
 import {
     ServerRestorePanel,
@@ -83,6 +88,9 @@ type Props = ServerBackupsProps & {
     runs: Run[];
     running: boolean;
     system: SystemBackups;
+    remote: RemoteSettings;
+    remote_servers?: string[];
+    remote_listing?: RemoteListing | null;
 };
 
 const frequencies: { value: Frequency; label: string }[] = [
@@ -125,6 +133,9 @@ export default function ServerBackups({
     restores,
     inspected,
     system,
+    remote,
+    remote_servers,
+    remote_listing,
 }: Props) {
     const [form, setForm] = useState<Schedule>(schedule);
     const [saving, setSaving] = useState(false);
@@ -139,7 +150,15 @@ export default function ServerBackups({
         ) ||
         backups.data.some(
             (backup) =>
-                backup.status === 'queued' || backup.status === 'running',
+                backup.status === 'queued' ||
+                backup.status === 'running' ||
+                backup.remote_status === 'uploading' ||
+                backup.remote_status === 'fetching',
+        ) ||
+        system.backups.some(
+            (backup) =>
+                backup.remote_status === 'uploading' ||
+                backup.remote_status === 'fetching',
         );
 
     usePoll(
@@ -152,6 +171,7 @@ export default function ServerBackups({
                 'estimate',
                 'space',
                 'restores',
+                'system',
             ],
         },
         { autoStart: busy },
@@ -547,6 +567,12 @@ export default function ServerBackups({
             </Panel>
 
             <SystemBackupPanel system={system} />
+
+            <RemoteBackupPanel
+                remote={remote}
+                servers={remote_servers}
+                listing={remote_listing}
+            />
 
             <BackupNowPanel
                 scope={scope}

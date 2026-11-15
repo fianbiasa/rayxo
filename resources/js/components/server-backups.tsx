@@ -14,6 +14,11 @@ import { GeneratedPasswordInput } from '@/components/generated-password-input';
 import InputError from '@/components/input-error';
 import { Pagination } from '@/components/pagination';
 import { Panel, tableStyles } from '@/components/panel';
+import {
+    FetchFromRemoteButton,
+    RemoteCopyNote,
+} from '@/components/remote-backups';
+import type { RemoteCopy } from '@/components/remote-backups';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -41,7 +46,7 @@ import { backupRoutes } from '@/lib/scoped-routes';
 import type { AccountScope } from '@/lib/scoped-routes';
 import type { Paginated } from '@/types';
 
-export type ServerBackup = {
+export type ServerBackup = RemoteCopy & {
     id: number;
     username: string;
     account_exists: boolean;
@@ -367,46 +372,61 @@ export function ServerBackupsPanel({
                                                     terbaca dan dilewati.
                                                 </p>
                                             )}
+                                            <RemoteCopyNote copy={backup} />
                                         </td>
                                         <td className={tableStyles.td}>
                                             <div className="flex justify-end gap-1">
                                                 {backup.status ===
-                                                    'completed' && (
-                                                    <>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            asChild
-                                                        >
-                                                            <a
-                                                                href={
-                                                                    routes.download(
-                                                                        backup.id,
-                                                                    ).url
+                                                    'completed' &&
+                                                    !backup.on_server &&
+                                                    backup.remote_status ===
+                                                        'uploaded' && (
+                                                        <FetchFromRemoteButton
+                                                            url={
+                                                                routes.fetch(
+                                                                    backup.id,
+                                                                ).url
+                                                            }
+                                                        />
+                                                    )}
+                                                {backup.status ===
+                                                    'completed' &&
+                                                    backup.on_server && (
+                                                        <>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                asChild
+                                                            >
+                                                                <a
+                                                                    href={
+                                                                        routes.download(
+                                                                            backup.id,
+                                                                        ).url
+                                                                    }
+                                                                >
+                                                                    <Download />{' '}
+                                                                    Unduh
+                                                                </a>
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() =>
+                                                                    openRestore(
+                                                                        backup,
+                                                                    )
                                                                 }
                                                             >
-                                                                <Download />{' '}
-                                                                Unduh
-                                                            </a>
-                                                        </Button>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={() =>
-                                                                openRestore(
-                                                                    backup,
-                                                                )
-                                                            }
-                                                        >
-                                                            {backup.account_exists ? (
-                                                                <RotateCcw />
-                                                            ) : (
-                                                                <UserPlus />
-                                                            )}{' '}
-                                                            Pulihkan
-                                                        </Button>
-                                                    </>
-                                                )}
+                                                                {backup.account_exists ? (
+                                                                    <RotateCcw />
+                                                                ) : (
+                                                                    <UserPlus />
+                                                                )}{' '}
+                                                                Pulihkan
+                                                            </Button>
+                                                        </>
+                                                    )}
                                                 {backup.can_delete &&
                                                     backup.status !==
                                                         'running' && (

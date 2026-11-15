@@ -135,6 +135,10 @@ func Register(registry *rpc.Registry, config Config) {
 		registry.Register(name, method)
 	}
 
+	for name, method := range remoteMethods(newRemoteStore(), config.Backups) {
+		registry.Register(name, method)
+	}
+
 	for name, method := range sshMethods(sysuser.System{}, jails, helper) {
 		registry.Register(name, method)
 	}

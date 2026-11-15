@@ -1097,7 +1097,10 @@ postfix postfix/main_mailer_type select Internet Site
 postfix postfix/mailname string $server_hostname
 DEBCONF
 
+    # rclone copies backups to FTP, SFTP or S3 destinations; ssh-keyscan
+    # (openssh-client) reads an SFTP server's host key for the admin to accept.
     quietly "${apt[@]}" install nginx mariadb-server postfix opendkim opendkim-tools certbot python3 quota cron zstd \
+        rclone openssh-client \
         "php$PHP_VERSION-fpm" "php$PHP_VERSION-cli" "php$PHP_VERSION-common" "php$PHP_VERSION-mysql" \
         "php$PHP_VERSION-mbstring" "php$PHP_VERSION-xml" "php$PHP_VERSION-curl" "php$PHP_VERSION-intl" \
         "php$PHP_VERSION-zip" "php$PHP_VERSION-bcmath" "php$PHP_VERSION-opcache" "php$PHP_VERSION-readline" \

@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\LoginHistoryController;
 use App\Http\Controllers\Admin\MailQueueController;
 use App\Http\Controllers\Admin\PackageController;
 use App\Http\Controllers\Admin\ProcessController;
+use App\Http\Controllers\Admin\RemoteBackupController;
 use App\Http\Controllers\Admin\ResellerDnsTemplateController;
 use App\Http\Controllers\Admin\ResellerPackageController;
 use App\Http\Controllers\Admin\ServerBackupController;
@@ -257,6 +258,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('backups/{serverBackup}/download', [ServerBackupController::class, 'download'])->name('backups.download');
         Route::post('backups/{serverBackup}/restore', [ServerBackupController::class, 'restore'])->middleware('throttle:10,1,backup-restore')->name('backups.restore');
         Route::post('backups/{serverBackup}/restore-account', [ServerBackupController::class, 'restoreAccount'])->middleware('throttle:10,1,backup-restore')->name('backups.restore-account');
+        Route::post('backups/{serverBackup}/fetch', [RemoteBackupController::class, 'fetch'])->middleware('throttle:10,1,backup-fetch')->name('backups.fetch');
         Route::delete('backups/{serverBackup}', [ServerBackupController::class, 'destroy'])->name('backups.destroy');
     });
 
@@ -310,6 +312,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('backups/{serverBackup}/download', [ServerBackupController::class, 'download'])->name('backups.download');
         Route::post('backups/{serverBackup}/restore', [ServerBackupController::class, 'restore'])->middleware('throttle:10,1,backup-restore')->name('backups.restore');
         Route::post('backups/{serverBackup}/restore-account', [ServerBackupController::class, 'restoreAccount'])->middleware('throttle:10,1,backup-restore')->name('backups.restore-account');
+        Route::post('backups/{serverBackup}/fetch', [RemoteBackupController::class, 'fetch'])->middleware('throttle:10,1,backup-fetch')->name('backups.fetch');
+        Route::put('backups/remote', [RemoteBackupController::class, 'update'])->middleware('throttle:20,1,backup-remote')->name('backups.remote.update');
+        Route::post('backups/remote/host-key', [RemoteBackupController::class, 'hostKey'])->middleware('throttle:10,1,backup-remote-key')->name('backups.remote.host-key');
+        Route::post('backups/remote/test', [RemoteBackupController::class, 'test'])->middleware('throttle:10,1,backup-remote-test')->name('backups.remote.test');
+        Route::post('backups/remote/take', [RemoteBackupController::class, 'take'])->middleware('throttle:30,1,backup-remote-take')->name('backups.remote.take');
+        Route::post('backups/system/{systemBackup}/fetch', [RemoteBackupController::class, 'fetchSystem'])->middleware('throttle:10,1,backup-fetch')->name('backups.system.fetch');
         Route::delete('backups/{serverBackup}', [ServerBackupController::class, 'destroy'])->name('backups.destroy');
         Route::get('audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');
         Route::get('login-history', [LoginHistoryController::class, 'index'])->name('login-history.index');

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\RemoteCopyStatus;
 use App\Enums\ServerBackupStatus;
 use Database\Factories\ServerBackupFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -23,6 +24,10 @@ use Illuminate\Support\Carbon;
  * @property string $username
  * @property string $name
  * @property ServerBackupStatus $status
+ * @property bool $on_server Whether the file is on this server; false once only the remote copy is left.
+ * @property RemoteCopyStatus|null $remote_status Its copy on the remote destination, if one was made.
+ * @property string|null $remote_error
+ * @property Carbon|null $remote_at When the copy reached the remote destination.
  * @property bool $files
  * @property bool $email
  * @property list<string> $databases
@@ -41,6 +46,15 @@ class ServerBackup extends Model
     use HasFactory;
 
     /**
+     * A new backup is on this server, and has no copy elsewhere yet.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'on_server' => true,
+    ];
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -49,6 +63,9 @@ class ServerBackup extends Model
     {
         return [
             'status' => ServerBackupStatus::class,
+            'on_server' => 'boolean',
+            'remote_status' => RemoteCopyStatus::class,
+            'remote_at' => 'datetime',
             'files' => 'boolean',
             'email' => 'boolean',
             'databases' => 'array',

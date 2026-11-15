@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -68,7 +69,7 @@ func (e *Error) Unwrap() error {
 func Run(ctx context.Context, program string, args ...string) ([]byte, error) {
 	var output bytes.Buffer
 
-	err := run(ctx, nil, &output, &output, program, args)
+	err := run(ctx, nil, nil, &output, &output, program, args)
 
 	return output.Bytes(), err
 }
@@ -77,9 +78,17 @@ func Run(ctx context.Context, program string, args ...string) ([]byte, error) {
 // only its stdout; stderr only ends up in the *Error of a failure. Input
 // never shows in the process list, unlike arguments.
 func RunInput(ctx context.Context, input []byte, program string, args ...string) ([]byte, error) {
+	return RunEnv(ctx, nil, input, program, args...)
+}
+
+// RunEnv is like RunInput, with env (KEY=value) added to the fixed
+// environment: for settings a program reads from its environment, such as
+// rclone's remotes, which then show neither in the process list nor on
+// disk.
+func RunEnv(ctx context.Context, env []string, input []byte, program string, args ...string) ([]byte, error) {
 	var stdout, stderr bytes.Buffer
 
-	err := run(ctx, input, &stdout, &stderr, program, args)
+	err := run(ctx, env, input, &stdout, &stderr, program, args)
 	if failure, ok := errors.AsType[*Error](err); ok {
 		failure.Output = shorten(stderr.String())
 	}
@@ -87,17 +96,18 @@ func RunInput(ctx context.Context, input []byte, program string, args ...string)
 	return stdout.Bytes(), err
 }
 
-// run runs program with args and input on stdin, writing its output to
-// stdout and stderr. Failures are *Error with the combined output of
-// stdout and stderr when they are the same buffer.
-func run(ctx context.Context, input []byte, stdout, stderr *bytes.Buffer, program string, args []string) error {
+// run runs program with args, env added to the fixed environment, and
+// input on stdin, writing its output to stdout and stderr. Failures are
+// *Error with the combined output of stdout and stderr when they are the
+// same buffer.
+func run(ctx context.Context, env []string, input []byte, stdout, stderr *bytes.Buffer, program string, args []string) error {
 	if !filepath.IsAbs(program) {
 		return &Error{Program: program, ExitCode: -1, Err: errors.New("program must be an absolute path")}
 	}
 
 	cmd := exec.CommandContext(ctx, program, args...)
 	cmd.Dir = "/"
-	cmd.Env = environment
+	cmd.Env = append(slices.Clip(environment), env...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 

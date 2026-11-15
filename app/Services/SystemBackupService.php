@@ -43,6 +43,7 @@ class SystemBackupService
         private AgentClient $agent,
         private AuditLogger $audit,
         private NotificationService $notifications,
+        private RemoteBackupService $remote,
     ) {}
 
     /**
@@ -152,6 +153,7 @@ class SystemBackupService
         ])->save();
 
         $this->rotate();
+        $this->remote->queueCopy($backup);
     }
 
     public function fail(SystemBackup $backup, string $message): void
@@ -162,26 +164,29 @@ class SystemBackupService
     }
 
     /**
-     * Delete the backups of the panel beyond the newest it keeps; failed
-     * ones are forgotten after a week.
+     * Delete the backups of the panel beyond the newest it keeps on this
+     * server; those with a copy on the remote destination stay there.
+     * Failed ones are forgotten after a week.
      */
     public function rotate(): void
     {
         $kept = SystemBackup::query()
             ->where('status', ServerBackupStatus::Completed)
+            ->where('on_server', true)
             ->orderByDesc('id')
             ->limit($this->settings()['keep'])
             ->pluck('id');
 
         $old = SystemBackup::query()
             ->where('status', ServerBackupStatus::Completed)
+            ->where('on_server', true)
             ->whereNotIn('id', $kept)
-            ->get(['id', 'name']);
+            ->get();
 
         if ($old->isNotEmpty()) {
             try {
                 $this->agent->call('backup.system_delete', ['names' => $old->pluck('name')->all()], 60);
-                SystemBackup::query()->whereKey($old->pluck('id')->all())->delete();
+                RemoteBackupService::leftOnServer($old);
             } catch (AgentException $exception) {
                 report($exception);
             }
@@ -204,6 +209,10 @@ class SystemBackupService
             throw ValidationException::withMessages(['system' => __('Only a finished backup can be downloaded.')]);
         }
 
+        if (! $backup->on_server) {
+            throw ValidationException::withMessages(['system' => __('This backup is only on the remote destination; take it back to the server first.')]);
+        }
+
         $transfer = Str::random(48);
 
         try {
@@ -220,7 +229,8 @@ class SystemBackupService
     }
 
     /**
-     * Delete a backup for good.
+     * Delete a backup for good: on this server, and its copy on the remote
+     * destination.
      *
      * @throws ValidationException
      */
@@ -228,6 +238,12 @@ class SystemBackupService
     {
         if ($backup->status === ServerBackupStatus::Running) {
             throw ValidationException::withMessages(['system' => __('Wait until this backup is done.')]);
+        }
+
+        try {
+            $this->remote->deleteCopy($backup);
+        } catch (ValidationException $exception) {
+            throw ValidationException::withMessages(['system' => collect($exception->errors())->flatten()->first()]);
         }
 
         try {
@@ -242,9 +258,10 @@ class SystemBackupService
     }
 
     /**
-     * The panel's hostname, as a backup's name may hold it.
+     * The panel's hostname, as a backup's name may hold it, and its folder
+     * on the remote destination.
      */
-    private function hostname(): string
+    public function hostname(): string
     {
         $host = (string) parse_url((string) config('app.url'), PHP_URL_HOST);
 
