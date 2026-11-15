@@ -325,6 +325,12 @@ class AccountImportTest extends TestCase
 
         $this->assertSame([AccountImport::STATUS_FAILED, 'The username cptest1 is taken; enter another username.', null], [$taken->refresh()->status, $taken->error, $taken->password_hash]);
 
+        $staff = AccountImport::factory()->create(['file' => self::FILE, 'actor_id' => $this->admin->id, 'username' => 'lain', 'email' => $this->admin->email]);
+
+        app(AccountImportService::class)->run($staff);
+
+        $this->assertSame("An administrator or reseller uses the email address {$this->admin->email}; enter another one.", $staff->refresh()->error);
+
         Domain::factory()->create(['name' => 'cptest1.example']);
         $domain = AccountImport::factory()->create(['file' => self::FILE, 'actor_id' => $this->admin->id, 'username' => 'baru']);
 

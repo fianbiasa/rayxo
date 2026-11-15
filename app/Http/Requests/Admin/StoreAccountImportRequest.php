@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin;
 
+use App\Enums\Role;
 use App\Models\Package;
 use App\Models\User;
 use App\Rules\ValidUsername;
@@ -31,7 +32,9 @@ class StoreAccountImportRequest extends FormRequest
         return [
             'file' => ['required', 'string', 'max:160', 'regex:/^[A-Za-z0-9][A-Za-z0-9._-]{0,150}\.(tar\.gz|tgz|tar\.zst|tar)$/D'],
             'username' => ['nullable', 'string', new ValidUsername, Rule::unique(User::class)],
-            'email' => ['nullable', 'string', 'lowercase', 'email', 'max:255', Rule::unique(User::class)],
+            // The account is a hosting account: it may share its address with
+            // other hosting accounts, not with an administrator or reseller.
+            'email' => ['nullable', 'string', 'lowercase', 'email', 'max:255', Rule::unique(User::class)->whereIn('role', [Role::Admin->value, Role::Reseller->value])],
             'password' => ['required', 'string', Password::default()],
             'package_id' => ['nullable', 'integer', Rule::in(Package::query()->handedOutBy($actor)->pluck('id')->all())],
         ];

@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Laravel\Fortify\Features;
 use Tests\TestCase;
@@ -69,6 +70,7 @@ class PasswordResetTest extends TestCase
             $response = $this->post(route('password.update'), [
                 'token' => $notification->token,
                 'email' => $user->email,
+                'username' => $user->username,
                 'password' => 'password',
                 'password_confirmation' => 'password',
             ]);
@@ -93,6 +95,7 @@ class PasswordResetTest extends TestCase
             $this->post(route('password.update'), [
                 'token' => $notification->token,
                 'email' => $user->email,
+                'username' => $user->username,
                 'password' => 'a-new-password-1',
                 'password_confirmation' => 'a-new-password-1',
             ])->assertSessionHasNoErrors();
@@ -102,6 +105,38 @@ class PasswordResetTest extends TestCase
 
         $this->assertSame(0, DB::table('sessions')->where('user_id', $user->id)->count());
         $this->assertNotSame('stolen-cookie-token', $user->refresh()->remember_token);
+    }
+
+    public function test_accounts_sharing_an_email_address_each_get_a_link_that_resets_only_them()
+    {
+        Notification::fake();
+        $first = User::factory()->create(['email' => 'budi@example.com']);
+        $second = User::factory()->create(['email' => 'budi@example.com']);
+
+        $this->post(route('password.email'), ['email' => 'budi@example.com']);
+
+        Notification::assertSentTo($first, ResetPassword::class);
+        Notification::assertSentTo($second, ResetPassword::class, function (ResetPassword $notification) use ($first, $second) {
+            $mail = $notification->toMail($second);
+            $this->assertStringContainsString('username='.$second->username, (string) $mail->actionUrl);
+            $this->assertContains('Account: '.$second->username, $mail->introLines);
+
+            $reset = fn (User $account) => $this->post(route('password.update'), [
+                'token' => $notification->token,
+                'email' => 'budi@example.com',
+                'username' => $account->username,
+                'password' => 'a-new-password-1',
+                'password_confirmation' => 'a-new-password-1',
+            ]);
+
+            $reset($first)->assertSessionHasErrors('email');
+            $reset($second)->assertSessionHasNoErrors();
+
+            return true;
+        });
+
+        $this->assertTrue(Hash::check('a-new-password-1', $second->refresh()->password));
+        $this->assertTrue(Hash::check('password', $first->refresh()->password));
     }
 
     public function test_the_answer_does_not_tell_which_emails_have_accounts()
@@ -143,6 +178,7 @@ class PasswordResetTest extends TestCase
         $response = $this->post(route('password.update'), [
             'token' => 'invalid-token',
             'email' => $user->email,
+            'username' => $user->username,
             'password' => 'newpassword123',
             'password_confirmation' => 'newpassword123',
         ]);

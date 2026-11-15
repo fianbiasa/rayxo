@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Agent\AgentClient;
 use App\Agent\AgentException;
+use App\Enums\Role;
 use App\Jobs\ImportAccount;
 use App\Models\AccountImport;
 use App\Models\Domain;
@@ -206,8 +207,10 @@ class AccountImportService
             throw ValidationException::withMessages(['username' => __('The username :username is taken; enter another username.', ['username' => $username])]);
         }
 
-        if ($email !== null && User::query()->where('email', $email)->exists()) {
-            throw ValidationException::withMessages(['email' => __('Another account uses the email address :email; enter another one.', ['email' => $email])]);
+        // Hosting accounts may share an address, but not with an administrator
+        // or reseller.
+        if ($email !== null && User::query()->where('email', $email)->whereIn('role', [Role::Admin, Role::Reseller])->exists()) {
+            throw ValidationException::withMessages(['email' => __('An administrator or reseller uses the email address :email; enter another one.', ['email' => $email])]);
         }
     }
 

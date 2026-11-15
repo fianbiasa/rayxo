@@ -113,8 +113,10 @@ class AccountRestoreService
             throw ValidationException::withMessages(['password' => __('The backup does not hold the account\'s password; enter a new one.')]);
         }
 
-        if (User::query()->where('email', $email)->exists()) {
-            throw ValidationException::withMessages(['email' => __('Another account uses this email address.')]);
+        // Hosting accounts may share an address, but not with an administrator
+        // or reseller.
+        if (User::query()->where('email', $email)->whereIn('role', [Role::Admin, Role::Reseller])->exists()) {
+            throw ValidationException::withMessages(['email' => __('An administrator or reseller uses this email address.')]);
         }
 
         $owner = $this->ownerFor($backup, $actor);

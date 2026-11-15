@@ -48,6 +48,28 @@ class AuthenticationTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
+    public function test_accounts_sharing_an_email_address_sign_in_with_their_own_password()
+    {
+        User::factory()->create(['email' => 'budi@example.com', 'password' => 'first-password-1']);
+        $second = User::factory()->create(['email' => 'budi@example.com', 'password' => 'second-password-2']);
+
+        $this->post(route('login.store'), ['username' => 'budi@example.com', 'password' => 'wrong-password']);
+        $this->assertGuest();
+
+        $this->post(route('login.store'), ['username' => 'budi@example.com', 'password' => 'second-password-2']);
+        $this->assertAuthenticatedAs($second);
+    }
+
+    public function test_accounts_sharing_an_email_address_and_password_sign_in_with_the_username()
+    {
+        User::factory()->count(2)->create(['email' => 'budi@example.com']);
+
+        $this->post(route('login.store'), ['username' => 'budi@example.com', 'password' => 'password'])
+            ->assertSessionHasErrors(['username' => 'Several accounts use this email address and password; sign in with the username instead.']);
+
+        $this->assertGuest();
+    }
+
     public function test_successful_login_is_recorded()
     {
         $user = User::factory()->create();

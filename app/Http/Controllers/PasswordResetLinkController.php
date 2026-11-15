@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Responses\PasswordResetLinkResponse;
+use App\Models\User;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
@@ -14,6 +15,10 @@ use Laravel\Fortify\Http\Requests\SendPasswordResetLinkRequest;
  * email, so nobody can flood an inbox with reset mail or try many emails
  * quickly. Over the limit, the answer is the same as always and no mail
  * is sent.
+ *
+ * Hosting accounts may share an email address, so every account of the
+ * address (up to a few) gets a link of its own, which names it and resets
+ * only it.
  */
 class PasswordResetLinkController extends FortifyPasswordResetLinkController
 {
@@ -23,6 +28,11 @@ class PasswordResetLinkController extends FortifyPasswordResetLinkController
     public const PER_IP = 10;
 
     public const PER_EMAIL = 3;
+
+    /**
+     * Accounts of one email address that get a link.
+     */
+    public const ACCOUNTS = 10;
 
     public function store(SendPasswordResetLinkRequest $request): Responsable
     {
@@ -41,6 +51,16 @@ class PasswordResetLinkController extends FortifyPasswordResetLinkController
             RateLimiter::hit($key, 600);
         }
 
-        return parent::store($request);
+        $accounts = User::query()
+            ->where('email', Str::lower(trim((string) $request->input('email'))))
+            ->orderBy('id')
+            ->limit(self::ACCOUNTS)
+            ->get();
+
+        foreach ($accounts as $account) {
+            $this->broker()->sendResetLink(['username' => $account->username]);
+        }
+
+        return new PasswordResetLinkResponse;
     }
 }

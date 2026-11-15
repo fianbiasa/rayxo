@@ -90,6 +90,17 @@ class ApiAccountTest extends TestCase
             ->assertJsonValidationErrors('username');
     }
 
+    public function test_a_billing_client_with_two_services_gets_two_accounts_with_its_email_address()
+    {
+        foreach (['budi', 'budi2'] as $username) {
+            $this->withToken(self::RESELLER_KEY)
+                ->postJson('/api/v1/accounts', ['username' => $username, 'name' => 'Budi', 'email' => 'budi@example.com', 'password' => 'a-long-password-123'])
+                ->assertCreated();
+        }
+
+        $this->assertSame(2, User::query()->where('email', 'budi@example.com')->count());
+    }
+
     public function test_an_account_is_suspended_moved_and_deleted()
     {
         User::factory()->create(['username' => 'budi', 'owner_id' => $this->reseller->id]);

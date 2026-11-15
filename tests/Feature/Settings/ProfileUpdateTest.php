@@ -46,6 +46,33 @@ class ProfileUpdateTest extends TestCase
         $this->assertNull($user->email_verified_at);
     }
 
+    public function test_a_hosting_account_may_take_another_hosting_accounts_email_address_but_not_a_resellers()
+    {
+        User::factory()->create(['email' => 'budi@example.com']);
+        User::factory()->reseller()->create(['email' => 'shop@example.com']);
+        $user = User::factory()->create();
+
+        $update = fn (string $email) => $this->actingAs($user)
+            ->withSession(['auth.password_confirmed_at' => time()])
+            ->patch(route('profile.update'), ['name' => $user->name, 'email' => $email]);
+
+        $update('shop@example.com')->assertSessionHasErrors('email');
+        $update('budi@example.com')->assertSessionHasNoErrors();
+
+        $this->assertSame('budi@example.com', $user->refresh()->email);
+    }
+
+    public function test_an_administrator_keeps_an_email_address_of_its_own()
+    {
+        User::factory()->create(['email' => 'budi@example.com']);
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->withSession(['auth.password_confirmed_at' => time()])
+            ->patch(route('profile.update'), ['name' => $admin->name, 'email' => 'budi@example.com'])
+            ->assertSessionHasErrors('email');
+    }
+
     public function test_the_email_cannot_change_without_the_password_confirmed()
     {
         $user = User::factory()->create(['email' => 'budi@example.com']);

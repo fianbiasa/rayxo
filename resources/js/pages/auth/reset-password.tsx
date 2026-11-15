@@ -10,21 +10,40 @@ import { update } from '@/routes/password';
 type Props = {
     token: string;
     email: string;
+    username: string;
     passwordRules: string;
 };
 
-export default function ResetPassword({ token, email, passwordRules }: Props) {
+export default function ResetPassword({
+    token,
+    email,
+    username,
+    passwordRules,
+}: Props) {
     return (
         <>
             <Head title="Atur ulang kata sandi" />
 
             <Form
                 {...update.form()}
-                transform={(data) => ({ ...data, token, email })}
+                transform={(data) => ({ ...data, token, email, username })}
                 resetOnSuccess={['password', 'password_confirmation']}
             >
                 {({ processing, errors }) => (
                     <div className="grid gap-6">
+                        <div className="grid gap-2">
+                            <Label htmlFor="username">Username</Label>
+                            <Input
+                                id="username"
+                                name="username"
+                                autoComplete="username"
+                                value={username}
+                                className="bg-muted text-muted-foreground"
+                                readOnly
+                            />
+                            <InputError message={errors.username} />
+                        </div>
+
                         <div className="grid gap-2">
                             <Label htmlFor="email">Email</Label>
                             <Input

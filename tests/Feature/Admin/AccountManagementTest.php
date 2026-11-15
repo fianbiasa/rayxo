@@ -272,6 +272,26 @@ class AccountManagementTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_hosting_accounts_may_share_an_email_address_but_not_with_an_administrator_or_reseller()
+    {
+        $admin = User::factory()->admin()->create(['email' => 'boss@example.com']);
+        User::factory()->create(['email' => 'budi@example.com']);
+
+        $this->actingAs($admin)
+            ->post(route('admin.accounts.store'), $this->validAccountData())
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($admin)
+            ->post(route('admin.accounts.store'), $this->validAccountData(['username' => 'budi2', 'email' => 'boss@example.com']))
+            ->assertSessionHasErrors('email');
+
+        $this->actingAs($admin)
+            ->post(route('admin.accounts.store'), $this->validAccountData(['username' => 'seller', 'role' => 'reseller']))
+            ->assertSessionHasErrors('email');
+
+        $this->assertSame(2, User::query()->where('email', 'budi@example.com')->count());
+    }
+
     public function test_admins_can_suspend_an_account()
     {
         $admin = User::factory()->admin()->create();

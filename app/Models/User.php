@@ -100,6 +100,15 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     }
 
     /**
+     * What a password reset token belongs to: the username, since hosting
+     * accounts may share an email address. A reset link carries it.
+     */
+    public function getEmailForPasswordReset(): string
+    {
+        return $this->username;
+    }
+
+    /**
      * The admin or reseller that created this account.
      *
      * @return BelongsTo<User, $this>

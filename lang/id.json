@@ -576,7 +576,7 @@
     "The username :username is in use again, so the account cannot be made again.": "Username :username sudah dipakai lagi, jadi akunnya tidak bisa dibuat lagi.",
     "The backup does not hold the account's email address; enter one.": "Backup ini tidak menyimpan email akun; isi email-nya.",
     "The backup does not hold the account's password; enter a new one.": "Backup ini tidak menyimpan password akun; isi password baru.",
-    "Another account uses this email address.": "Email ini sudah dipakai akun lain.",
+    "An administrator or reseller uses this email address.": "Email ini sudah dipakai admin atau reseller.",
     "The backup was deleted before the account was ready.": "Backup-nya terhapus sebelum akunnya siap.",
     "The account could not be created on the server.": "Akun tidak bisa dibuat di server.",
     "Account :username could not be restored": "Akun :username gagal dipulihkan",
@@ -634,7 +634,7 @@
     "No administrator is left to import the account for.": "Tidak ada admin lagi untuk mengimpor akun ini.",
     "The import did not finish.": "Impor tidak selesai.",
     "The username :username is taken; enter another username.": "Username :username sudah dipakai; isi username lain.",
-    "Another account uses the email address :email; enter another one.": "Email :email sudah dipakai akun lain; isi email lain.",
+    "An administrator or reseller uses the email address :email; enter another one.": "Email :email sudah dipakai admin atau reseller; isi email lain.",
     "The domain :domain is on this server already.": "Domain :domain sudah ada di server ini.",
     "This file is not a cPanel or DirectAdmin backup.": "File ini bukan backup cPanel atau DirectAdmin.",
     "DNS zones are made new here: records added by hand in the old panel (such as MX or TXT) must be added again.": "Zona DNS dibuat baru di sini: record yang dulu ditambahkan sendiri di panel lama (misalnya MX atau TXT) perlu ditambahkan lagi.",
@@ -650,5 +650,8 @@
     "The ionCube Loader :loader is on for PHP :versions.": "ionCube Loader :loader aktif untuk PHP :versions.",
     "ionCube makes no loader for the PHP versions of this server.": "ionCube tidak menyediakan loader untuk versi PHP di server ini.",
     "The ionCube Loader is off.": "ionCube Loader dimatikan.",
-    "This login link has expired or was used already. Sign in with your password.": "Tautan login ini sudah kedaluwarsa atau sudah dipakai. Masuk dengan password."
+    "This login link has expired or was used already. Sign in with your password.": "Tautan login ini sudah kedaluwarsa atau sudah dipakai. Masuk dengan password.",
+    "Several accounts use this email address and password; sign in with the username instead.": "Beberapa akun memakai email dan password ini; masuk dengan username.",
+    "Account: :username": "Akun: :username",
+    "Reset Password Notification": "Atur ulang kata sandi"
 }

@@ -230,6 +230,23 @@ class AccountBackupRestoreTest extends TestCase
         $this->assertSame(0, Task::query()->count());
     }
 
+    public function test_a_deleted_account_may_come_back_with_an_address_another_hosting_account_uses()
+    {
+        User::factory()->create(['email' => 'lama@example.com']);
+        $backup = ServerBackup::factory()->create(['user_id' => null, 'owner_id' => $this->admin->id, 'username' => 'lama']);
+        $this->answers['backup.server_inspect'] = $this->meta($this->settings(Hash::make('Old-Password-123')));
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.backups.restore-account', $backup), ['email' => $this->reseller->email])
+            ->assertSessionHasErrors(['email' => 'An administrator or reseller uses this email address.']);
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.backups.restore-account', $backup))
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(2, User::query()->where('email', 'lama@example.com')->count());
+    }
+
     public function test_a_restore_the_account_could_not_be_created_for_fails_and_tells_the_admins()
     {
         NotificationChannel::factory()->for($this->admin)->create();
