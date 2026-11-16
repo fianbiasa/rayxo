@@ -8,6 +8,7 @@ use App\Models\AuditLog;
 use App\Models\Domain;
 use App\Models\Package;
 use App\Models\ResellerPackage;
+use App\Models\ServerBackup;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -153,6 +154,29 @@ class ResellerManagementTest extends TestCase
         $this->assertSame($resellerPackage->id, $account->package_id);
         $this->assertDatabaseHas('tasks', ['action' => 'account.set_quota', 'user_id' => $account->id]);
         $this->assertDatabaseHas(AuditLog::class, ['action' => 'account.transferred', 'subject_id' => $account->id]);
+    }
+
+    public function test_an_accounts_backups_move_with_it_to_the_new_owner()
+    {
+        $admin = User::factory()->admin()->create();
+        $from = User::factory()->reseller()->create(['reseller_package_id' => ResellerPackage::factory()->unlimited()->create()->id]);
+        $to = User::factory()->reseller()->create(['reseller_package_id' => ResellerPackage::factory()->unlimited()->create()->id]);
+        $toPackage = Package::factory()->for($to, 'owner')->create();
+        $account = User::factory()->for($from, 'owner')->create([
+            'package_id' => Package::factory()->for($from, 'owner')->create()->id,
+        ]);
+        $backup = ServerBackup::factory()->for($account, 'account')->create();
+        $this->assertSame($from->id, $backup->owner_id);
+
+        $this->actingAs($admin)
+            ->put(route('admin.accounts.owner.update', $account), ['owner_id' => $to->id, 'package_id' => $toPackage->id])
+            ->assertSessionHasNoErrors();
+
+        // The backup now belongs to the new owner: it may use it, the old one may not.
+        $backup->refresh();
+        $this->assertSame($to->id, $backup->owner_id);
+        $this->assertTrue($to->can('use', $backup));
+        $this->assertFalse($from->can('use', $backup));
     }
 
     public function test_an_account_moves_only_onto_a_package_of_its_new_owner_within_its_limits()

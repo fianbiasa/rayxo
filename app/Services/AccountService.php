@@ -8,6 +8,7 @@ use App\Enums\Role;
 use App\Listeners\ApplyAccountTaskResult;
 use App\Models\Package;
 use App\Models\ResellerPackage;
+use App\Models\ServerBackup;
 use App\Models\User;
 use App\Support\ResellerLimits;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -195,6 +196,10 @@ class AccountService
             $account->forceFill(['owner_id' => $owner->id, 'package_id' => $package?->id])->save();
             $account->setRelation('owner', $owner);
             $account->setRelation('package', $package);
+
+            // The account's backups belong to its owner; move them along so the
+            // new owner may use them and the previous one no longer can.
+            ServerBackup::query()->where('user_id', $account->id)->update(['owner_id' => $owner->id]);
 
             $capsChanged = collect(Package::RESOURCE_LIMITS)
                 ->contains(fn (string $key): bool => $previousOwner?->resellerPackage?->resourceCap($key) !== $owner->resellerPackage?->resourceCap($key));
