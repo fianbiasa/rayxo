@@ -180,6 +180,25 @@ class ResellerManagementTest extends TestCase
         $this->assertFalse($from->can('use', $backup));
     }
 
+    public function test_a_reseller_cannot_lift_a_suspension_the_admin_imposed()
+    {
+        $admin = User::factory()->admin()->create();
+        $reseller = User::factory()->reseller()->create();
+        $account = User::factory()->for($reseller, 'owner')->create();
+
+        $this->actingAs($admin)->post(route('admin.accounts.suspend', $account), ['reason' => 'Phishing site'])->assertSessionHasNoErrors();
+        $this->assertSame(AccountStatus::Suspended, $account->fresh()->status);
+
+        $this->actingAs($reseller)->post(route('reseller.accounts.unsuspend', $account))->assertSessionHasErrors(['username']);
+        $this->assertSame(AccountStatus::Suspended, $account->fresh()->status);
+
+        // A reseller can still lift a suspension it imposed itself.
+        $this->actingAs($admin)->post(route('admin.accounts.unsuspend', $account))->assertSessionHasNoErrors();
+        $this->actingAs($reseller)->post(route('reseller.accounts.suspend', $account), ['reason' => 'Late payment'])->assertSessionHasNoErrors();
+        $this->actingAs($reseller)->post(route('reseller.accounts.unsuspend', $account))->assertSessionHasNoErrors();
+        $this->assertSame(AccountStatus::Active, $account->fresh()->status);
+    }
+
     public function test_a_moved_accounts_tickets_answer_to_the_new_owner()
     {
         $admin = User::factory()->admin()->create();

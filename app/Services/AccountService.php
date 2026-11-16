@@ -263,6 +263,7 @@ class AccountService
             $account->forceFill([
                 'status' => AccountStatus::Suspended,
                 'suspend_reason' => $reason,
+                'suspended_by' => $actor === null ? 'system' : ($actor->isAdmin() ? 'admin' : 'reseller'),
             ])->save();
 
             if (! $account->isPanelOnly()) {
@@ -285,10 +286,17 @@ class AccountService
     {
         $this->ensureStatus($account, [AccountStatus::Suspended], __('Only suspended accounts can be unsuspended.'));
 
+        // A reseller may only lift a suspension it imposed, never one from the
+        // administrator (e.g. for abuse) or the system (over its bandwidth).
+        if ($actor !== null && $actor->isReseller() && in_array($account->suspended_by, ['admin', 'system'], true)) {
+            throw ValidationException::withMessages(['username' => __('This account was suspended by the administrator; only an administrator can let it sign in again.')]);
+        }
+
         DB::transaction(function () use ($account, $actor): void {
             $account->forceFill([
                 'status' => AccountStatus::Active,
                 'suspend_reason' => null,
+                'suspended_by' => null,
                 'bandwidth_suspended_at' => null,
             ])->save();
 
