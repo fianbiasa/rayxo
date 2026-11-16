@@ -136,7 +136,10 @@ class FortifyServiceProvider extends ServiceProvider
      */
     private function passwordResetMail(User $user, string $token): MailMessage
     {
-        $url = url(route('password.reset', ['token' => $token, 'email' => $user->email, 'username' => $user->username], false));
+        // Build the link from the configured panel URL, never the request's
+        // Host header: otherwise a forged Host would send a real reset link
+        // (with a valid token) to an address the attacker chose.
+        $url = rtrim((string) config('app.url'), '/').route('password.reset', ['token' => $token, 'email' => $user->email, 'username' => $user->username], false);
         $broker = config('auth.defaults.passwords');
 
         return (new MailMessage)

@@ -6,6 +6,7 @@ use App\Http\Controllers\PasswordResetLinkController;
 use App\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
@@ -39,6 +40,20 @@ class PasswordResetTest extends TestCase
         $this->post(route('password.email'), ['email' => $user->email]);
 
         Notification::assertSentTo($user, ResetPassword::class);
+    }
+
+    public function test_reset_link_uses_the_configured_panel_url_not_the_host_header()
+    {
+        config(['app.url' => 'https://panel.example.net:2222']);
+        $user = User::factory()->create();
+
+        // A request carrying a forged Host header is active while the mail is built.
+        $this->app->instance('request', Request::create('https://attacker.example/forgot-password', 'POST'));
+
+        $mail = (new ResetPassword('tok3n'))->toMail($user);
+
+        $this->assertStringStartsWith('https://panel.example.net:2222/reset-password/tok3n', $mail->actionUrl);
+        $this->assertStringNotContainsString('attacker.example', $mail->actionUrl);
     }
 
     public function test_reset_password_screen_can_be_rendered()
