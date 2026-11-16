@@ -19,6 +19,7 @@ type fakeStore struct {
 	files   map[string][]byte
 	folders []string
 	fail    error
+	lastMax int64
 }
 
 func (f *fakeStore) key(path []string) string { return strings.Join(path, "/") }
@@ -40,7 +41,8 @@ func (f *fakeStore) Upload(_ context.Context, _ remote.Destination, local string
 	return nil
 }
 
-func (f *fakeStore) Download(_ context.Context, _ remote.Destination, local string, path ...string) error {
+func (f *fakeStore) Download(_ context.Context, _ remote.Destination, local string, maxBytes int64, path ...string) error {
+	f.lastMax = maxBytes
 	content, ok := f.files[f.key(path)]
 	if !ok {
 		return &remote.Error{Message: "object not found"}
@@ -152,6 +154,11 @@ func TestABackupGoesToTheDestinationAndComesBackOnlyAsABackup(t *testing.T) {
 	result, err := env.call("backup.remote_download", backup)
 	if err != nil || result["manifest"] != `{"format":1}` {
 		t.Fatalf("download = %v, %v", result, err)
+	}
+
+	// The download is capped at the size the listing reported.
+	if env.store.lastMax != created.Size {
+		t.Errorf("download cap = %d, want %d", env.store.lastMax, created.Size)
 	}
 
 	if info, err := os.Lstat(local); err != nil || info.Mode().Perm() != 0o640 {

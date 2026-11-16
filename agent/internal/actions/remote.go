@@ -35,7 +35,7 @@ type remoteStore interface {
 	HostKey(ctx context.Context, host string, port int) (remote.HostKey, error)
 	Test(ctx context.Context, d remote.Destination, server string) error
 	Upload(ctx context.Context, d remote.Destination, local string, path ...string) error
-	Download(ctx context.Context, d remote.Destination, local string, path ...string) error
+	Download(ctx context.Context, d remote.Destination, local string, maxBytes int64, path ...string) error
 	Delete(ctx context.Context, d remote.Destination, path ...string) error
 	List(ctx context.Context, d remote.Destination, path ...string) ([]remote.Entry, error)
 	Folders(ctx context.Context, d remote.Destination, path ...string) ([]string, error)
@@ -247,7 +247,9 @@ func (r remoteActions) download(ctx context.Context, raw json.RawMessage) (any, 
 	part := filepath.Join(filepath.Dir(local), ".remote-"+params.Name+".part")
 	_ = os.Remove(part)
 
-	if err := r.store.Download(ctx, params.Destination, part, params.file()...); err != nil {
+	// Cap the transfer at the size the listing reported and we reserved space
+	// for, so a destination that under-reports a file cannot fill the disk.
+	if err := r.store.Download(ctx, params.Destination, part, size, params.file()...); err != nil {
 		_ = os.Remove(part)
 
 		return nil, remoteError(err)

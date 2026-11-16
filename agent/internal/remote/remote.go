@@ -479,8 +479,18 @@ func (c Client) Upload(ctx context.Context, d Destination, local string, path ..
 }
 
 // Download copies path on the destination to the local file.
-func (c Client) Download(ctx context.Context, d Destination, local string, path ...string) error {
-	_, err := c.call(ctx, d, "copyto", d.remote(path...), local)
+func (c Client) Download(ctx context.Context, d Destination, local string, maxBytes int64, path ...string) error {
+	args := []string{"copyto"}
+
+	// Stop the transfer once it passes the expected size, so a destination that
+	// serves far more than it listed cannot fill the disk.
+	if maxBytes > 0 {
+		args = append(args, "--max-transfer="+strconv.FormatInt(maxBytes, 10), "--cutoff-mode=hard")
+	}
+
+	args = append(args, d.remote(path...), local)
+
+	_, err := c.call(ctx, d, args...)
 
 	return err
 }
