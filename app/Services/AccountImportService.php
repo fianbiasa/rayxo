@@ -130,7 +130,10 @@ class AccountImportService
             $this->step($import, AccountImport::STATUS_READING);
             $backup = ForeignBackup::read($this->call('backup.import_inspect', ['name' => $import->file]));
             $username = $import->username ?? $backup->user;
-            $import->forceFill(['source' => $backup->kind(), 'source_user' => $backup->user])->save();
+            // Record the resolved username so account creation refuses it while
+            // this import is still running (it may be the backup's, not the one
+            // the administrator typed).
+            $import->forceFill(['username' => $username, 'source' => $backup->kind(), 'source_user' => $backup->user])->save();
 
             $this->ensureFree($username, $import->email ?? $backup->contactEmail());
             $plan = $backup->plan($username, $this->phpVersions->available());

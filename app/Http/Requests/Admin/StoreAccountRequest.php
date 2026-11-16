@@ -8,6 +8,7 @@ use App\Enums\Role;
 use App\Models\Package;
 use App\Models\ResellerPackage;
 use App\Models\User;
+use App\Rules\UsernameNotBeingMoved;
 use App\Rules\ValidDomain;
 use App\Rules\ValidUsername;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -36,7 +37,7 @@ class StoreAccountRequest extends FormRequest
         $roles = $actor->isAdmin() ? [Role::User, Role::Reseller, Role::Admin] : [Role::User];
 
         return [
-            'username' => ['required', 'string', new ValidUsername, Rule::unique(User::class)],
+            'username' => ['required', 'string', new ValidUsername, new UsernameNotBeingMoved, Rule::unique(User::class)],
             ...$this->profileRules(hostingAccount: $this->input('role') === Role::User->value),
             'password' => $this->passwordRules(),
             'role' => ['required', Rule::in(array_map(fn (Role $role): string => $role->value, $roles))],

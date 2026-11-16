@@ -6,6 +6,7 @@ use App\Enums\AccountStatus;
 use App\Enums\DomainStatus;
 use App\Enums\Role;
 use App\Jobs\RunAgentTask;
+use App\Models\AccountTransfer;
 use App\Models\AccountUsage;
 use App\Models\AuditLog;
 use App\Models\Domain;
@@ -391,6 +392,24 @@ class AccountManagementTest extends TestCase
      * @param  array<string, string>  $overrides
      * @return array<string, string>
      */
+    public function test_a_username_a_move_is_using_cannot_be_taken_by_a_new_account()
+    {
+        $admin = User::factory()->admin()->create();
+        $transfer = AccountTransfer::factory()->create(['username' => 'john', 'status' => AccountTransfer::STATUS_DOWNLOADING]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.accounts.store'), $this->validAccountData(['username' => 'john']))
+            ->assertSessionHasErrors('username');
+        $this->assertDatabaseMissing(User::class, ['username' => 'john']);
+
+        // Once the move has failed, the name is free again.
+        $transfer->forceFill(['status' => AccountTransfer::STATUS_FAILED])->save();
+        $this->actingAs($admin)
+            ->post(route('admin.accounts.store'), $this->validAccountData(['username' => 'john']))
+            ->assertSessionHasNoErrors();
+        $this->assertDatabaseHas(User::class, ['username' => 'john']);
+    }
+
     private function validAccountData(array $overrides = []): array
     {
         return [
