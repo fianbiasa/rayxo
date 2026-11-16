@@ -299,6 +299,12 @@ function rayxo_request(array $params, $method, $path, $body = null)
         throw new Exception('The server has no login key: put a RAYXO login key in its Access Hash.');
     }
 
+    // The login key goes in the Authorization header; never send it over plain
+    // HTTP. Turn on "Secure" (SSL Mode) for the server in WHMCS.
+    if ($scheme !== 'https') {
+        throw new Exception('Turn on SSL Mode for this server: the RAYXO login key must not be sent over plain HTTP.');
+    }
+
     $curl = curl_init($url);
     curl_setopt_array($curl, [
         CURLOPT_CUSTOMREQUEST => $method,
@@ -321,7 +327,9 @@ function rayxo_request(array $params, $method, $path, $body = null)
     curl_close($curl);
 
     $answer = is_string($raw) ? json_decode($raw, true) : null;
-    logModuleCall('rayxo', $method.' '.$path, $body, $raw, $answer, [$key]);
+    // Redact the login key and any password in the body from WHMCS's module log.
+    $redact = array_values(array_filter([$key, isset($body['password']) ? (string) $body['password'] : null], 'strlen'));
+    logModuleCall('rayxo', $method.' '.$path, $body, $raw, $answer, $redact);
 
     if ($raw === false) {
         throw new Exception('RAYXO could not be reached: '.$failure);
