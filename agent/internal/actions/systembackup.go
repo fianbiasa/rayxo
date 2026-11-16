@@ -34,11 +34,15 @@ type SystemBackupSources map[string]string
 
 // DefaultSystemBackupSources are the panel's configuration (its .env with
 // the key that decrypts its data, certificates), the DKIM keys mail is
-// signed with, and the files people uploaded (ticket attachments, logos).
+// signed with (the server's own under opendkim, and every domain's under
+// rspamd), and the files people uploaded (ticket attachments, logos). The
+// domains' keys match the DKIM records already published in their DNS, so
+// they must come back on a restore rather than be generated anew.
 func DefaultSystemBackupSources() SystemBackupSources {
 	return SystemBackupSources{
 		"etc-rayxo":     "/etc/rayxo",
 		"opendkim-keys": "/etc/opendkim/keys",
+		"rspamd-dkim":   "/var/lib/rspamd/dkim",
 		"storage":       "/var/lib/rayxo/storage/app",
 	}
 }

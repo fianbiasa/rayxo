@@ -123,6 +123,14 @@ func readTarGz(t *testing.T, path string) map[string]*tar.Header {
 	}
 }
 
+func TestTheDomainDKIMKeysAreAmongTheSystemBackupSources(t *testing.T) {
+	// Without them a restored panel signs mail with new keys that the domains'
+	// published DKIM records do not match.
+	if DefaultSystemBackupSources()["rspamd-dkim"] != "/var/lib/rspamd/dkim" {
+		t.Error("the domains' DKIM keys are not in the system backup")
+	}
+}
+
 func TestSystemBackupMethodsAreRegistered(t *testing.T) {
 	registry := rpc.NewRegistry()
 	Register(registry, Config{})

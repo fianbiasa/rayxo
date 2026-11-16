@@ -1612,13 +1612,24 @@ restore_system() {
     # this server keeps its own database password and address.
     set_env_value APP_KEY "$key"
 
-    # The DKIM keys the domains' DNS records were published for.
+    # The DKIM keys the domains' DNS records were published for: the server's
+    # own hostname key (opendkim) and every hosting domain's key (rspamd). They
+    # must come back before rayxo:restore-server runs, so the mail setup keeps
+    # them instead of generating new ones the published DNS does not match.
     if [[ -d "$work/rayxo-system/opendkim-keys" ]]; then
         install -d -m 0750 -o opendkim -g opendkim /etc/opendkim/keys
         cp -R "$work/rayxo-system/opendkim-keys/." /etc/opendkim/keys/
         chown -R opendkim:opendkim /etc/opendkim/keys
         find /etc/opendkim/keys -type f -name '*.private' -exec chmod 0600 {} +
-        info "Kunci DKIM dipulihkan"
+        info "Kunci DKIM hostname dipulihkan"
+    fi
+
+    if [[ -d "$work/rayxo-system/rspamd-dkim" ]]; then
+        install -d -m 0750 -o _rspamd -g _rspamd "$RSPAMD_DKIM_DIR"
+        cp -R "$work/rayxo-system/rspamd-dkim/." "$RSPAMD_DKIM_DIR/"
+        chown -R _rspamd:_rspamd "$RSPAMD_DKIM_DIR"
+        find "$RSPAMD_DKIM_DIR" -type f -exec chmod 0640 {} +
+        info "Kunci DKIM domain dipulihkan"
     fi
 
     # Ticket attachments and logos.
