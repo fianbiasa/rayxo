@@ -129,6 +129,19 @@ class RemoteBackupTest extends TestCase
         $this->assertTrue(AuditLog::query()->where('action', 'backup.remote_changed')->exists());
     }
 
+    public function test_a_failed_save_does_not_keep_the_secret_key_in_the_session()
+    {
+        $this->actingAs($this->admin)
+            ->from(route('admin.backups.index'))
+            ->put(route('admin.backups.remote.update'), [
+                'enabled' => true, 'type' => 's3', 'bucket' => '',
+                'access_key' => 'AKIA', 'secret_key' => 'top-secret-value', 'keep' => 7, 'keep_local' => true,
+            ])
+            ->assertSessionHasErrors();
+
+        $this->assertArrayNotHasKey('secret_key', session('_old_input', []));
+    }
+
     public function test_a_destination_is_checked_before_it_is_saved()
     {
         $sftp = ['enabled' => true, 'type' => 'sftp', 'host' => 'backup.example.com', 'user' => 'rayxo', 'password' => 'x', 'keep' => 7, 'keep_local' => true];

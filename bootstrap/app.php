@@ -42,7 +42,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         // A custom certificate's private key must never reach the session
         // as old input when its form fails validation.
-        $exceptions->dontFlash(['private_key', 'certificate']);
+        // api_key is another panel's access key entered to move an account in;
+        // secret_key is an S3 secret for remote backups. Neither must be kept
+        // as old input in the session when a form fails validation.
+        $exceptions->dontFlash(['private_key', 'certificate', 'api_key', 'secret_key']);
 
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
