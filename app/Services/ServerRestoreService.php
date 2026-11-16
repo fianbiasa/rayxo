@@ -52,6 +52,12 @@ class ServerRestoreService
         $this->closeWhatWasGoing();
         $this->leaveBackupsOnTheDestination();
 
+        // The accounts are made again empty here; their data comes back from
+        // their own backups afterwards. Turn the schedule off so a scheduled
+        // run does not back up the empty accounts and rotate the real backups
+        // away before then. The administrator turns it on again after.
+        app(ServerBackupService::class)->pauseSchedule();
+
         $accounts = User::query()
             ->where('role', Role::User)
             ->whereIn('status', [AccountStatus::Active, AccountStatus::Suspended, AccountStatus::Pending])

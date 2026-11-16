@@ -210,6 +210,22 @@ class SystemBackupTest extends TestCase
         $this->assertSame([$active->id, $suspended->id, $deleting->id], $queued->take(3)->pluck('user_id')->all());
     }
 
+    public function test_a_restore_turns_the_backup_schedule_off()
+    {
+        $backups = app(ServerBackupService::class);
+        $backups->saveSchedule([
+            'enabled' => true, 'frequency' => 'daily', 'hour' => 2, 'weekday' => 1, 'day' => 1,
+            'keep' => 7, 'files' => true, 'email' => true, 'databases' => true,
+        ], User::factory()->admin()->create());
+        $this->assertTrue($backups->schedule()['enabled']);
+
+        $this->artisan('rayxo:restore-server')->assertSuccessful();
+
+        // Otherwise the next scheduled run would back up the still-empty
+        // accounts and rotate the real backups away.
+        $this->assertFalse(app(ServerBackupService::class)->schedule()['enabled']);
+    }
+
     public function test_an_account_made_again_takes_the_ids_the_new_server_gave_it()
     {
         $account = User::factory()->create(['username' => 'aktif', 'uid' => 1001, 'gid' => 1001]);

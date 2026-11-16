@@ -101,6 +101,28 @@ class ServerBackupService
     }
 
     /**
+     * Turn the schedule off, keeping its other settings. Used after the panel
+     * is restored on a new server: the accounts are made empty and their data
+     * comes back afterwards, so a scheduled run must not back the empty
+     * accounts up (and rotate the real backups away) in between. The
+     * administrator turns the schedule on again once the data is restored.
+     */
+    public function pauseSchedule(): void
+    {
+        $schedule = $this->schedule();
+
+        if (! $schedule['enabled']) {
+            return;
+        }
+
+        Setting::query()->updateOrCreate(['key' => self::SETTING], ['value' => [
+            ...$schedule,
+            'enabled' => false,
+            'enabled_at' => null,
+        ]]);
+    }
+
+    /**
      * Save the schedule. Turning the backups on, or changing when they run,
      * starts the schedule from now: a time that already passed today does
      * not start a backup at once.

@@ -36,6 +36,8 @@ class RestoreServerCommand extends Command
             "{$queued['mail_domains']} mail domains",
         ]).'. The queue worker makes them in the background; see Tasks in the panel.');
 
+        $this->components->warn('Scheduled backups are turned off so they do not overwrite the empty accounts. Turn them on again in Backups once each account\'s data is restored.');
+
         return self::SUCCESS;
     }
 }
