@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * "Login as": an administrator signs in as a reseller or hosting account,
@@ -85,6 +86,23 @@ class ImpersonationService
     public function impersonating(Request $request): bool
     {
         return $request->hasSession() && $request->session()->has(self::SESSION_KEY);
+    }
+
+    /**
+     * Whether the account that signed in as the current one may still do so:
+     * it still exists, may still sign in, and still manages this account.
+     * Checked on every request so a reseller that was suspended, or that the
+     * account was moved away from, stops controlling it at once.
+     */
+    public function impersonatorMayContinue(Request $request): bool
+    {
+        $impersonator = $this->impersonator($request);
+        $account = $request->user();
+
+        return $impersonator !== null
+            && $impersonator->status->canLogIn()
+            && $account instanceof User
+            && Gate::forUser($impersonator)->allows('loginAs', $account);
     }
 
     /**

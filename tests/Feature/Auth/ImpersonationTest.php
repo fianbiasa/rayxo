@@ -142,4 +142,63 @@ class ImpersonationTest extends TestCase
             ->delete(route('impersonation.destroy'))
             ->assertNotFound();
     }
+
+    public function test_a_suspended_reseller_stops_acting_as_its_account_on_the_next_request()
+    {
+        $reseller = User::factory()->reseller()->create();
+        $account = User::factory()->create(['owner_id' => $reseller->id]);
+
+        $this->actingAs($reseller)->post(route('reseller.accounts.login-as', $account))->assertRedirect();
+        $this->assertAuthenticatedAs($account);
+
+        $reseller->forceFill(['status' => AccountStatus::Suspended])->save();
+
+        $this->get(route('dashboard'))->assertRedirect(route('login'));
+        $this->assertGuest();
+
+        // The reseller's control ended; it can no longer act as the account.
+        $this->post(route('cron-jobs.store'), ['schedule' => '*/5 * * * *', 'command' => 'true'])
+            ->assertRedirect(route('login'));
+        $this->assertSame(0, $account->cronJobs()->count());
+    }
+
+    public function test_moving_the_account_to_another_owner_ends_the_old_resellers_impersonation()
+    {
+        $reseller = User::factory()->reseller()->create();
+        $other = User::factory()->reseller()->create();
+        $account = User::factory()->create(['owner_id' => $reseller->id]);
+
+        $this->actingAs($reseller)->post(route('reseller.accounts.login-as', $account))->assertRedirect();
+        $this->assertAuthenticatedAs($account);
+
+        $account->forceFill(['owner_id' => $other->id])->save();
+        $this->app['auth']->forgetGuards();
+
+        $this->get(route('dashboard'))->assertRedirect(route('login'));
+        $this->assertGuest();
+    }
+
+    public function test_a_real_login_clears_a_leftover_impersonation_marker()
+    {
+        $admin = User::factory()->admin()->create();
+        $reseller = User::factory()->reseller()->create();
+        $account = User::factory()->create();
+
+        $this->actingAs($admin)->withSession(['auth.password_confirmed_at' => time()])
+            ->post(route('admin.accounts.login-as', $account))->assertRedirect();
+        $this->assertAuthenticatedAs($account);
+
+        // The impersonated account is deleted; the browser is left a guest with
+        // the marker still in the session.
+        $account->delete();
+        $this->app['auth']->forgetGuards();
+
+        $this->post(route('login.store'), ['username' => $reseller->username, 'password' => 'password'])
+            ->assertSessionMissing(ImpersonationService::SESSION_KEY);
+        $this->assertAuthenticatedAs($reseller);
+
+        // The leftover marker is gone, so returning cannot switch into the admin.
+        $this->delete(route('impersonation.destroy'))->assertNotFound();
+        $this->assertAuthenticatedAs($reseller);
+    }
 }

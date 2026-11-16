@@ -19,6 +19,13 @@ class RecordSuccessfulLogin
             return;
         }
 
+        // A real sign-in is never inside a "login as", so drop any marker left
+        // over from an earlier one (e.g. after the impersonated account was
+        // deleted); otherwise it could later switch into the impersonator.
+        if (request()->hasSession()) {
+            request()->session()->forget(ImpersonationService::SESSION_KEY);
+        }
+
         $event->user->forceFill(['last_login_at' => now()])->saveQuietly();
 
         $this->audit->record('auth.login', $event->user, actor: $event->user);
