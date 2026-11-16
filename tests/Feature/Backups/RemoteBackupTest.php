@@ -222,6 +222,30 @@ class RemoteBackupTest extends TestCase
         $this->assertTrue($backups[0]->on_server);
     }
 
+    public function test_a_new_account_reusing_a_deleted_ones_name_does_not_rotate_its_remote_copies()
+    {
+        $this->enableRemote(['keep' => 1]);
+        // A deleted account's copy: its row has no user_id but keeps the username.
+        $deleted = ServerBackup::factory()->create([
+            'user_id' => null, 'username' => 'budi', 'on_server' => false,
+            'remote_status' => RemoteCopyStatus::Uploaded, 'name' => 'budi-2026-11-01-020000.tar.gz',
+        ]);
+        // A new account takes the same name; its backups are copied and rotated.
+        $account = User::factory()->create(['username' => 'budi']);
+        $backups = ServerBackup::factory()->count(2)->for($account, 'account')
+            ->sequence(fn ($s) => ['name' => "budi-2026-11-1{$s->index}-020000.tar.gz"])->create();
+
+        foreach ($backups as $backup) {
+            app(RemoteBackupService::class)->copy($backup);
+        }
+
+        // keep=1 rotates the new account's older copy, but never the deleted
+        // account's copy, which must stay until it is deleted by hand.
+        $deletedNames = array_map(fn (array $call): string => $call[1]['name'], $this->calls('backup.remote_delete'));
+        $this->assertNotContains('budi-2026-11-01-020000.tar.gz', $deletedNames);
+        $this->assertSame(RemoteCopyStatus::Uploaded, $deleted->refresh()->remote_status);
+    }
+
     public function test_without_a_copy_on_the_server_a_backup_lives_on_the_destination_until_it_rotates_out()
     {
         $this->enableRemote(['keep' => 1, 'keep_local' => false]);

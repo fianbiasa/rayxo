@@ -279,9 +279,13 @@ class RemoteBackupService
      */
     public function rotate(ServerBackup|SystemBackup $backup): void
     {
+        // Group an account's copies by its id, like the local rotation, not by
+        // username: a new account that reuses a deleted one's name must not
+        // rotate the deleted account's copies away. A backup whose account is
+        // gone (no user_id) is not rotated, so its copies stay until deleted.
         $copies = fn () => ($backup instanceof SystemBackup
             ? SystemBackup::query()
-            : ServerBackup::query()->whereNotNull('backup_run_id')->where('username', $backup->username))
+            : ServerBackup::query()->whereNotNull('backup_run_id')->whereNotNull('user_id')->where('user_id', $backup->user_id))
             ->where('remote_status', RemoteCopyStatus::Uploaded);
 
         $kept = $copies()->orderByDesc('id')->limit($this->saved()['keep'])->pluck('id');
