@@ -33,7 +33,7 @@ class ServerBackupPolicy
             return Response::denyAsNotFound();
         }
 
-        return $actor->isAdmin() || $backup->isManual()
+        return $actor->isAdmin() || ($backup->isManual() && ! $backup->isImported())
             ? Response::allow()
             : Response::deny(__('Automatic backups are deleted by the administrator\'s rotation.'));
     }

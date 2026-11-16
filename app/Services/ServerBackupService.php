@@ -444,8 +444,11 @@ class ServerBackupService
         }
 
         if ($backup->isManual()) {
+            // Only hand-made backups are rotated here; backups taken from
+            // another server (imported) stay until deleted by hand.
             $manual = fn () => ServerBackup::query()
                 ->whereNull('backup_run_id')
+                ->where('imported', false)
                 ->where('user_id', $account->id)
                 ->where('status', ServerBackupStatus::Completed)
                 ->where('on_server', true);
@@ -688,6 +691,7 @@ class ServerBackupService
         $backup = new ServerBackup;
         $backup->forceFill([
             'backup_run_id' => null,
+            'imported' => true,
             'user_id' => $account?->id,
             'owner_id' => $account !== null ? $account->owner_id : $actor->id,
             'username' => $username,

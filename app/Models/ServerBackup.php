@@ -68,6 +68,7 @@ class ServerBackup extends Model
             'remote_at' => 'datetime',
             'files' => 'boolean',
             'email' => 'boolean',
+            'imported' => 'boolean',
             'databases' => 'array',
             'size_bytes' => 'integer',
             'skipped' => 'integer',
@@ -99,6 +100,16 @@ class ServerBackup extends Model
     public function isManual(): bool
     {
         return $this->backup_run_id === null;
+    }
+
+    /**
+     * Whether it was taken from another server (a scan, transfer or import)
+     * rather than made here. It has no run, like a hand-made backup, but the
+     * automatic rotation of hand-made backups must leave it alone.
+     */
+    public function isImported(): bool
+    {
+        return $this->imported === true;
     }
 
     /**

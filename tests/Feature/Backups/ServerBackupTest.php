@@ -388,6 +388,39 @@ class ServerBackupTest extends TestCase
         return [...ServerBackupService::DEFAULTS, 'enabled' => true, ...$overrides];
     }
 
+    public function test_a_backup_made_by_hand_keeps_imported_backups()
+    {
+        $imported = ServerBackup::factory()->count(2)->for($this->budi, 'account')
+            ->create(['backup_run_id' => null, 'imported' => true, 'status' => ServerBackupStatus::Completed]);
+        ServerBackup::factory()->count(3)->for($this->budi, 'account')
+            ->create(['backup_run_id' => null, 'imported' => false, 'status' => ServerBackupStatus::Completed]);
+
+        $fresh = ServerBackup::factory()->for($this->budi, 'account')->create([
+            'backup_run_id' => null, 'status' => ServerBackupStatus::Queued,
+            'size_bytes' => null, 'databases' => [], 'started_at' => null, 'finished_at' => null,
+        ]);
+        $this->answers['backup.server_create'] = ['name' => $fresh->name, 'size' => 1, 'skipped' => 0];
+
+        app(ServerBackupService::class)->create($fresh, true);
+
+        // The hand-made rotation keeps MANUAL_KEEP of its own, but imported
+        // backups (taken from another server) are left untouched.
+        foreach ($imported as $backup) {
+            $this->assertTrue($backup->fresh()->on_server);
+        }
+    }
+
+    public function test_a_reseller_cannot_delete_an_imported_backup()
+    {
+        $reseller = User::factory()->reseller()->create();
+        $account = User::factory()->create(['owner_id' => $reseller->id]);
+        $imported = ServerBackup::factory()->for($account, 'account')->create(['backup_run_id' => null, 'imported' => true]);
+        $byHand = ServerBackup::factory()->for($account, 'account')->create(['backup_run_id' => null, 'imported' => false]);
+
+        $this->assertFalse($reseller->can('delete', $imported));
+        $this->assertTrue($reseller->can('delete', $byHand));
+    }
+
     private function queued(?User $account = null): ServerBackup
     {
         $account ??= $this->budi;
