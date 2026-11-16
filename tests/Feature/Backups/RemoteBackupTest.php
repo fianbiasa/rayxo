@@ -235,6 +235,24 @@ class RemoteBackupTest extends TestCase
         $this->assertTrue($backups[0]->on_server);
     }
 
+    public function test_a_copy_remembers_its_server_folder_for_after_a_restore_elsewhere()
+    {
+        $this->enableRemote();
+        $account = User::factory()->create(['username' => 'budi']);
+        $backup = ServerBackup::factory()->for($account, 'account')->create(['name' => 'budi-1.tar.gz']);
+
+        app(RemoteBackupService::class)->copy($backup);
+        $this->assertSame('panel.example.com', $backup->fresh()->remote_server);
+
+        // The panel is restored on a server with a different hostname.
+        config(['app.url' => 'https://newhost.example.net:2222']);
+
+        // Deleting the copy still targets the folder it was uploaded under.
+        app(RemoteBackupService::class)->deleteCopy($backup->fresh());
+        $delete = $this->calls('backup.remote_delete');
+        $this->assertSame('panel.example.com', end($delete)[1]['server']);
+    }
+
     public function test_a_new_account_reusing_a_deleted_ones_name_does_not_rotate_its_remote_copies()
     {
         $this->enableRemote(['keep' => 1]);

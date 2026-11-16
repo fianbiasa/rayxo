@@ -243,7 +243,7 @@ class RemoteBackupService
             return;
         }
 
-        $backup->forceFill(['remote_status' => RemoteCopyStatus::Uploaded, 'remote_error' => null, 'remote_at' => now()])->save();
+        $backup->forceFill(['remote_status' => RemoteCopyStatus::Uploaded, 'remote_error' => null, 'remote_at' => now(), 'remote_server' => $this->server()])->save();
 
         if (! $settings['keep_local']) {
             try {
@@ -596,7 +596,9 @@ class RemoteBackupService
     {
         return [
             'destination' => $this->destination(),
-            'server' => $this->server(),
+            // The folder the copy was uploaded under, which may differ from this
+            // server's own after a restore onto a differently-named server.
+            'server' => $backup->remote_server ?: $this->server(),
             'kind' => $backup instanceof SystemBackup ? 'system' : 'account',
             'username' => $backup instanceof SystemBackup ? '' : $backup->username,
             'name' => $backup->name,
@@ -612,7 +614,7 @@ class RemoteBackupService
     {
         foreach ([ServerBackup::class, SystemBackup::class] as $model) {
             $model::query()->whereNotNull('remote_status')->where('on_server', false)->delete();
-            $model::query()->whereNotNull('remote_status')->update(['remote_status' => null, 'remote_error' => null, 'remote_at' => null]);
+            $model::query()->whereNotNull('remote_status')->update(['remote_status' => null, 'remote_error' => null, 'remote_at' => null, 'remote_server' => null]);
         }
     }
 
@@ -623,7 +625,7 @@ class RemoteBackupService
     private function forgetRemote(ServerBackup|SystemBackup $backup): void
     {
         if ($backup->on_server) {
-            $backup->forceFill(['remote_status' => null, 'remote_at' => null, 'remote_error' => null])->save();
+            $backup->forceFill(['remote_status' => null, 'remote_at' => null, 'remote_error' => null, 'remote_server' => null])->save();
         } else {
             $backup->delete();
         }

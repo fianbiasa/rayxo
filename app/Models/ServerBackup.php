@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property RemoteCopyStatus|null $remote_status Its copy on the remote destination, if one was made.
  * @property string|null $remote_error
  * @property Carbon|null $remote_at When the copy reached the remote destination.
+ * @property string|null $remote_server The server folder the copy lives under on the destination.
  * @property bool $files
  * @property bool $email
  * @property list<string> $databases
