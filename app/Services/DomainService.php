@@ -1231,6 +1231,10 @@ class DomainService
      */
     private function findConflict(User $account, string $name, bool $lock = false): ?string
     {
+        if (ValidDomain::isServerHostname($name)) {
+            return __('The :attribute belongs to this server\'s own hostname and cannot be added.', ['attribute' => __('domain')]);
+        }
+
         if (ResellerSetting::query()->where('login_domain', $name)->whereIn('login_domain_status', ['pending', 'active'])->exists()) {
             return __('This name is a reseller\'s panel sign-in address.');
         }

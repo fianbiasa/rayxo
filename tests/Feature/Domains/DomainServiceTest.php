@@ -87,6 +87,26 @@ class DomainServiceTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_a_website_cannot_be_the_servers_own_hostname_even_from_a_backup()
+    {
+        config(['app.url' => 'https://panel.example.net:2222']);
+        $account = User::factory()->create();
+        $service = $this->app->make(DomainService::class);
+
+        // create() is the single path every website goes through, including the
+        // ones a restore or import builds, so the hostname cannot slip past it.
+        foreach (['panel.example.net', 'mail.panel.example.net'] as $name) {
+            try {
+                $service->create($account, $name, $account);
+                $this->fail("expected {$name} to be refused");
+            } catch (ValidationException $exception) {
+                $this->assertStringContainsString("server's own hostname", (string) collect($exception->errors())->flatten()->first());
+            }
+        }
+
+        $this->assertDatabaseCount('domains', 0);
+    }
+
     public function test_a_name_taken_by_another_account_while_saving_is_reported_as_in_use()
     {
         $account = User::factory()->create();

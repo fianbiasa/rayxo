@@ -28,11 +28,22 @@ class ValidDomain implements ValidationRule
             return;
         }
 
-        $hostname = self::serverHostname();
-
-        if ($hostname !== null && ($value === $hostname || str_ends_with($value, '.'.$hostname))) {
+        if (self::isServerHostname($value)) {
             $fail('The :attribute belongs to this server\'s own hostname and cannot be added.')->translate();
         }
+    }
+
+    /**
+     * Whether the name is the panel's own hostname or a subdomain of it, which
+     * serves the panel and must never be handed to a hosting account. Checked
+     * centrally when a website is added so backups and imports cannot slip it
+     * past, since they build domains without this rule.
+     */
+    public static function isServerHostname(string $value): bool
+    {
+        $hostname = self::serverHostname();
+
+        return $hostname !== null && ($value === $hostname || str_ends_with($value, '.'.$hostname));
     }
 
     /**
