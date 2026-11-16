@@ -833,7 +833,7 @@ create_layout() {
 
     local dir
     for dir in storage/app/private storage/app/public storage/framework/cache/data \
-        storage/framework/sessions storage/framework/views storage/logs; do
+        storage/framework/sessions storage/framework/views storage/logs storage/tmp; do
         ensure_dir "$DATA_DIR/$dir"
     done
 
