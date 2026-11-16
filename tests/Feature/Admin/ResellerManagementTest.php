@@ -10,6 +10,7 @@ use App\Models\Package;
 use App\Models\ResellerPackage;
 use App\Models\ServerBackup;
 use App\Models\Task;
+use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Arr;
@@ -177,6 +178,29 @@ class ResellerManagementTest extends TestCase
         $this->assertSame($to->id, $backup->owner_id);
         $this->assertTrue($to->can('use', $backup));
         $this->assertFalse($from->can('use', $backup));
+    }
+
+    public function test_a_moved_accounts_tickets_answer_to_the_new_owner()
+    {
+        $admin = User::factory()->admin()->create();
+        $from = User::factory()->reseller()->create(['reseller_package_id' => ResellerPackage::factory()->unlimited()->create()->id]);
+        $to = User::factory()->reseller()->create(['reseller_package_id' => ResellerPackage::factory()->unlimited()->create()->id]);
+        $toPackage = Package::factory()->for($to, 'owner')->create();
+        $account = User::factory()->for($from, 'owner')->create([
+            'package_id' => Package::factory()->for($from, 'owner')->create()->id,
+        ]);
+        $ticket = Ticket::factory()->create(['user_id' => $account->id, 'reseller_id' => $from->id]);
+
+        $this->actingAs($admin)
+            ->put(route('admin.accounts.owner.update', $account), ['owner_id' => $to->id, 'package_id' => $toPackage->id])
+            ->assertSessionHasNoErrors();
+        $this->assertSame($to->id, $ticket->fresh()->reseller_id);
+
+        // Moving it to an administrator leaves the tickets to the admins.
+        $this->actingAs($admin)
+            ->put(route('admin.accounts.owner.update', $account), ['owner_id' => $admin->id, 'package_id' => null])
+            ->assertSessionHasNoErrors();
+        $this->assertNull($ticket->fresh()->reseller_id);
     }
 
     public function test_an_account_moves_only_onto_a_package_of_its_new_owner_within_its_limits()

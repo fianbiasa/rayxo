@@ -9,6 +9,7 @@ use App\Listeners\ApplyAccountTaskResult;
 use App\Models\Package;
 use App\Models\ResellerPackage;
 use App\Models\ServerBackup;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Support\ResellerLimits;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -200,6 +201,12 @@ class AccountService
             // The account's backups belong to its owner; move them along so the
             // new owner may use them and the previous one no longer can.
             ServerBackup::query()->where('user_id', $account->id)->update(['owner_id' => $owner->id]);
+
+            // Its support tickets answer to the new owner too (a reseller, or
+            // the administrators when moved to an admin). Otherwise the old
+            // reseller would keep reading them and get the account's new
+            // replies, and losing that reseller would delete the tickets.
+            Ticket::query()->where('user_id', $account->id)->update(['reseller_id' => $owner->isReseller() ? $owner->id : null]);
 
             $capsChanged = collect(Package::RESOURCE_LIMITS)
                 ->contains(fn (string $key): bool => $previousOwner?->resellerPackage?->resourceCap($key) !== $owner->resellerPackage?->resourceCap($key));
