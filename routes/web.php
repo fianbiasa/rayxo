@@ -317,6 +317,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('backups/remote/host-key', [RemoteBackupController::class, 'hostKey'])->middleware('throttle:10,1,backup-remote-key')->name('backups.remote.host-key');
         Route::post('backups/remote/test', [RemoteBackupController::class, 'test'])->middleware('throttle:10,1,backup-remote-test')->name('backups.remote.test');
         Route::post('backups/remote/take', [RemoteBackupController::class, 'take'])->middleware('throttle:30,1,backup-remote-take')->name('backups.remote.take');
+        Route::post('backups/remote/fetch-newest', [RemoteBackupController::class, 'fetchNewest'])->middleware('throttle:5,1,backup-remote-newest')->name('backups.remote.fetch-newest');
         Route::post('backups/system/{systemBackup}/fetch', [RemoteBackupController::class, 'fetchSystem'])->middleware('throttle:10,1,backup-fetch')->name('backups.system.fetch');
         Route::delete('backups/{serverBackup}', [ServerBackupController::class, 'destroy'])->name('backups.destroy');
         Route::get('audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');

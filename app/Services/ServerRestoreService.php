@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\AccountStatus;
 use App\Enums\BackupRunStatus;
+use App\Enums\RemoteCopyStatus;
 use App\Enums\Role;
 use App\Enums\ServerBackupStatus;
 use App\Enums\TaskStatus;
@@ -49,6 +50,7 @@ class ServerRestoreService
         }
 
         $this->closeWhatWasGoing();
+        $this->leaveBackupsOnTheDestination();
 
         $accounts = User::query()
             ->where('role', Role::User)
@@ -76,6 +78,24 @@ class ServerRestoreService
         return ['accounts' => $accounts->count(), 'databases' => $databases, ...$rebuilt];
     }
 
+    /**
+     * The backups the old server kept are not on this one. Those with a copy
+     * on the remote destination are there only now, and come back to this
+     * server with "Ambil dari remote"; the others come back when their
+     * files are copied here by hand. Backups of the panel are root's, so
+     * the panel cannot look for them: all with a copy count as there only.
+     */
+    private function leaveBackupsOnTheDestination(): void
+    {
+        ServerBackup::query()->where('remote_status', RemoteCopyStatus::Uploaded)->where('on_server', true)->each(function (ServerBackup $backup): void {
+            if (! is_file($backup->path())) {
+                $backup->forceFill(['on_server' => false])->save();
+            }
+        });
+
+        SystemBackup::query()->where('remote_status', RemoteCopyStatus::Uploaded)->update(['on_server' => false]);
+    }
+
     private function closeWhatWasGoing(): void
     {
         $note = __('Stopped: the panel was restored from a backup on another server.');
@@ -88,6 +108,10 @@ class ServerRestoreService
         foreach ([ServerBackup::class, SystemBackup::class] as $model) {
             $model::query()->whereIn('status', [ServerBackupStatus::Queued, ServerBackupStatus::Running])
                 ->update(['status' => ServerBackupStatus::Failed, 'error' => $note, 'finished_at' => now()]);
+            $model::query()->where('remote_status', RemoteCopyStatus::Uploading)
+                ->update(['remote_status' => RemoteCopyStatus::Failed, 'remote_error' => $note]);
+            $model::query()->where('remote_status', RemoteCopyStatus::Fetching)
+                ->update(['remote_status' => RemoteCopyStatus::Uploaded]);
         }
 
         BackupRun::query()->where('status', BackupRunStatus::Running)

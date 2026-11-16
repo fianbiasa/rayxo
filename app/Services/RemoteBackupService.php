@@ -365,6 +365,38 @@ class RemoteBackupService
     }
 
     /**
+     * Take the newest backup of every active account back from the
+     * destination, where it is there only: after the panel was brought back
+     * on a new server, before restoring every account. Returns how many
+     * were queued.
+     *
+     * @throws ValidationException
+     */
+    public function fetchNewest(User $actor): int
+    {
+        if (! $this->enabled()) {
+            throw ValidationException::withMessages(['backup' => __('Turn the remote destination on first.')]);
+        }
+
+        $queued = 0;
+
+        foreach (app(ServerBackupService::class)->accounts() as $account) {
+            $newest = ServerBackup::query()
+                ->where('user_id', $account->id)
+                ->where('status', ServerBackupStatus::Completed)
+                ->latest('id')
+                ->first();
+
+            if ($newest !== null && ! $newest->on_server && $newest->remote_status === RemoteCopyStatus::Uploaded) {
+                $this->queueFetch($newest, $actor);
+                $queued++;
+            }
+        }
+
+        return $queued;
+    }
+
+    /**
      * Bring a backup back from the destination: the job queueFetch()
      * queued.
      */

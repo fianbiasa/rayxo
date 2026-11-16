@@ -680,5 +680,7 @@
     "Saved, but the remote destination did not take a test file: :message": "Tersimpan, tapi tujuan remote tidak menerima file uji: :message",
     "The remote destination took a test file and deleted it again.": "Tujuan remote menerima file uji dan menghapusnya lagi.",
     "Taking :name back from the remote destination. This page shows when it is on the server.": "Mengambil :name dari tujuan remote. Halaman ini menunjukkan saat backup sudah ada di server.",
-    "Taking :name from the remote destination. It shows in the list once it is on the server.": "Mengambil :name dari tujuan remote. Backup muncul di daftar setelah ada di server."
+    "Taking :name from the remote destination. It shows in the list once it is on the server.": "Mengambil :name dari tujuan remote. Backup muncul di daftar setelah ada di server.",
+    "Taking the newest backup of :count account(s) back from the remote destination. Restore every account once they are on the server.": "Mengambil backup terbaru :count akun dari tujuan remote. Pulihkan semua akun setelah backup-nya ada di server.",
+    "No account has a newest backup that is only on the remote destination.": "Tidak ada akun yang backup terbarunya hanya ada di tujuan remote."
 }

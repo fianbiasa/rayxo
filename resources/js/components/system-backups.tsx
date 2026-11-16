@@ -1,5 +1,6 @@
 import { router } from '@inertiajs/react';
 import {
+    CloudDownload,
     DatabaseBackup,
     Download,
     FolderSearch,
@@ -32,6 +33,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { formatBytes, formatDateTime } from '@/lib/format';
 import { restoreAll, scan } from '@/routes/admin/backups';
+import { fetchNewest } from '@/routes/admin/backups/remote';
 import {
     destroy,
     download,
@@ -305,10 +307,15 @@ function Command({ children }: { children: string }) {
  * How the panel comes back on a new server, and restoring every account
  * from its newest backup once it did.
  */
-export function ServerRestorePanel() {
+export function ServerRestorePanel({
+    remoteEnabled,
+}: {
+    remoteEnabled: boolean;
+}) {
     const [confirming, setConfirming] = useState(false);
     const [processing, setProcessing] = useState(false);
     const [scanning, setScanning] = useState(false);
+    const [fetching, setFetching] = useState(false);
 
     const restore = () => {
         setProcessing(true);
@@ -328,7 +335,7 @@ export function ServerRestorePanel() {
     return (
         <Panel
             title="Pindah ke server baru"
-            description="Kalau server ini rusak atau diganti, panel dan isinya bisa dipulihkan di server baru dari backup sistem dan backup akun. Unduh keduanya secara berkala dan simpan di luar server ini."
+            description="Kalau server ini rusak atau diganti, panel dan isinya bisa dipulihkan di server baru dari backup sistem dan backup akun. Simpan keduanya di luar server ini: unduh secara berkala, atau salin otomatis ke tujuan remote."
         >
             <ol className="grid list-decimal gap-4 pl-5 text-sm">
                 <li className="grid gap-2">
@@ -342,10 +349,45 @@ export function ServerRestorePanel() {
                             'bash setup.sh --restore-system /root/rayxo-system-NAMA.tar.gz'
                         }
                     </Command>
+                    <p className="text-muted-foreground">
+                        Backup sistem ada di tujuan remote? Pasang RAYXO biasa
+                        di server baru, atur tujuan remote yang sama, buka
+                        Telusuri isi remote, pilih folder server lama, lalu
+                        Ambil backup sistemnya. File itu masuk ke
+                        /var/lib/rayxo/backups/system; jalankan perintah di atas
+                        dengan path itu.
+                    </p>
                 </li>
+                {remoteEnabled && (
+                    <li className="grid gap-2">
+                        Ambil backup terbaru setiap akun dari tujuan remote
+                        (pengaturannya ikut kembali bersama backup sistem):
+                        <div>
+                            <Button
+                                variant="outline"
+                                disabled={fetching}
+                                onClick={() => {
+                                    setFetching(true);
+                                    router.post(
+                                        fetchNewest.url(),
+                                        {},
+                                        {
+                                            preserveScroll: true,
+                                            onFinish: () => setFetching(false),
+                                        },
+                                    );
+                                }}
+                            >
+                                {fetching ? <Spinner /> : <CloudDownload />}
+                                Ambil backup terbaru dari remote
+                            </Button>
+                        </div>
+                    </li>
+                )}
                 <li className="grid gap-2">
-                    Salin backup akun ke folder backup server baru, lalu jadikan
-                    milik root dan grup rayxo:
+                    {remoteEnabled
+                        ? 'Backup akun yang tidak ada di remote: salin ke folder backup server baru, lalu jadikan milik root dan grup rayxo:'
+                        : 'Salin backup akun ke folder backup server baru, lalu jadikan milik root dan grup rayxo:'}
                     <Command>
                         {
                             'chown root:rayxo /var/lib/rayxo/backups/*.tar.gz\nchmod 640 /var/lib/rayxo/backups/*.tar.gz'

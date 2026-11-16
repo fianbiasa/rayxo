@@ -589,7 +589,7 @@ export default function ServerBackups({
                 inspected={inspected}
             />
 
-            <ServerRestorePanel />
+            <ServerRestorePanel remoteEnabled={remote.enabled} />
 
             <Dialog open={confirmRun} onOpenChange={setConfirmRun}>
                 <DialogContent className="rounded-2xl">

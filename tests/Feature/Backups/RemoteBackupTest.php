@@ -276,6 +276,25 @@ class RemoteBackupTest extends TestCase
         $this->assertSame(RemoteCopyStatus::Uploaded, $backup->remote_status);
     }
 
+    public function test_after_a_move_the_newest_backup_of_every_account_is_taken_back_at_once()
+    {
+        $this->enableRemote();
+        $moved = User::factory()->create();
+        $older = ServerBackup::factory()->for($moved, 'account')->create(['on_server' => false, 'remote_status' => RemoteCopyStatus::Uploaded]);
+        $newest = ServerBackup::factory()->for($moved, 'account')->create(['on_server' => false, 'remote_status' => RemoteCopyStatus::Uploaded]);
+        $here = User::factory()->create();
+        ServerBackup::factory()->for($here, 'account')->create(['remote_status' => RemoteCopyStatus::Uploaded]);
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.backups.remote.fetch-newest'))
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('inertia.flash_data.toast.type', 'success');
+
+        Queue::assertPushed(FetchBackupFromRemote::class, 1);
+        Queue::assertPushed(FetchBackupFromRemote::class, fn (FetchBackupFromRemote $job): bool => $job->backup?->is($newest) === true);
+        $this->assertSame([RemoteCopyStatus::Uploaded, RemoteCopyStatus::Fetching], [$older->fresh()->remote_status, $newest->fresh()->remote_status]);
+    }
+
     public function test_a_reseller_takes_back_only_backups_of_its_own_accounts_and_never_sets_the_destination()
     {
         $this->enableRemote();

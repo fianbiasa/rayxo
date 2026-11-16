@@ -5,6 +5,7 @@ namespace Tests\Feature\Backups;
 use App\Agent\AgentClient;
 use App\Agent\AgentException;
 use App\Enums\AccountStatus;
+use App\Enums\RemoteCopyStatus;
 use App\Enums\ServerBackupStatus;
 use App\Enums\TaskStatus;
 use App\Events\AgentTaskFinished;
@@ -177,8 +178,19 @@ class SystemBackupTest extends TestCase
         DB::table('jobs')->insert(['queue' => 'default', 'payload' => '{}', 'attempts' => 0, 'available_at' => 0, 'created_at' => 0]);
         $itself = SystemBackup::factory()->create(['status' => ServerBackupStatus::Running]);
         $other = SystemBackup::factory()->create(['status' => ServerBackupStatus::Queued]);
+        // The old server's backups: one with a copy on the remote destination,
+        // one being copied there, one without a copy, and the panel's.
+        $copied = ServerBackup::factory()->for($active, 'account')->create(['remote_status' => RemoteCopyStatus::Uploaded]);
+        $copying = ServerBackup::factory()->for($active, 'account')->create(['remote_status' => RemoteCopyStatus::Uploading]);
+        $local = ServerBackup::factory()->for($active, 'account')->create();
+        $panel = SystemBackup::factory()->create(['remote_status' => RemoteCopyStatus::Uploaded]);
 
         $this->artisan('rayxo:restore-server', ['--system-backup' => $itself->name])->assertSuccessful();
+
+        $this->assertFalse($copied->fresh()->on_server);
+        $this->assertSame([RemoteCopyStatus::Failed, true], [$copying->fresh()->remote_status, $copying->fresh()->on_server]);
+        $this->assertTrue($local->fresh()->on_server);
+        $this->assertFalse($panel->fresh()->on_server);
 
         $this->assertSame(ServerBackupStatus::Completed, $itself->fresh()->status);
         $this->assertSame(ServerBackupStatus::Failed, $other->fresh()->status);

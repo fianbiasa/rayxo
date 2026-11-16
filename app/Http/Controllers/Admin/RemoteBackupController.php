@@ -119,6 +119,21 @@ class RemoteBackupController extends Controller
     }
 
     /**
+     * Take the newest backup of every account back from the destination,
+     * where it is there only.
+     */
+    public function fetchNewest(Request $request): RedirectResponse
+    {
+        $queued = $this->remote->fetchNewest($request->user());
+
+        Inertia::flash('toast', $queued > 0
+            ? ['type' => 'success', 'message' => __('Taking the newest backup of :count account(s) back from the remote destination. Restore every account once they are on the server.', ['count' => $queued])]
+            : ['type' => 'error', 'message' => __('No account has a newest backup that is only on the remote destination.')]);
+
+        return back();
+    }
+
+    /**
      * Take a backup the panel does not know from a server's folder on the
      * destination.
      */
