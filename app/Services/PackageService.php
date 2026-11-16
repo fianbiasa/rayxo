@@ -56,10 +56,6 @@ class PackageService
     {
         $owner = $package->owner;
 
-        if ($owner !== null && $owner->isReseller()) {
-            ResellerLimits::for($owner)->ensurePackageChangeFits($package, $data);
-        }
-
         $package->fill($data);
 
         if (! $package->isDirty()) {
@@ -68,7 +64,15 @@ class PackageService
 
         $changed = array_keys($package->getDirty());
 
-        DB::transaction(function () use ($package, $changed, $actor): void {
+        DB::transaction(function () use ($package, $owner, $data, $changed, $actor): void {
+            // Lock the owner and check its limits inside the transaction, so two
+            // edits of its packages at once cannot both measure the same
+            // before-state and together exceed what the reseller may give out.
+            if ($owner !== null && $owner->isReseller()) {
+                User::query()->lockForUpdate()->find($owner->id);
+                ResellerLimits::for($owner)->ensurePackageChangeFits($package, $data);
+            }
+
             $from = array_intersect_key($package->getOriginal(), array_flip($changed));
 
             $package->save();
