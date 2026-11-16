@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Enums\Role;
-use App\Models\Domain;
 use App\Models\ResellerSetting;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -28,6 +27,7 @@ class BrandingService
         private AuditLogger $audit,
         private DnsService $dns,
         private TaskDispatcher $tasks,
+        private DomainService $domains,
     ) {}
 
     /**
@@ -111,8 +111,8 @@ class BrandingService
     public function setLoginDomain(User $reseller, ?string $domain, User $actor): void
     {
         if ($domain !== null) {
-            if (Domain::query()->where('name', $domain)->exists()) {
-                throw ValidationException::withMessages(['login_domain' => __('This domain is a website on this server.')]);
+            if ($this->domains->nameClashesWithAnyWebsite($domain)) {
+                throw ValidationException::withMessages(['login_domain' => __('This domain, or one it is part of, is a website on this server.')]);
             }
 
             if (ResellerSetting::query()->where('login_domain', $domain)->where('user_id', '!=', $reseller->id)->exists()) {

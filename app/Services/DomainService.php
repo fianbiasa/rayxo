@@ -1231,7 +1231,7 @@ class DomainService
      */
     private function findConflict(User $account, string $name, bool $lock = false): ?string
     {
-        if (ResellerSetting::query()->where('login_domain', $name)->exists()) {
+        if (ResellerSetting::query()->where('login_domain', $name)->whereIn('login_domain_status', ['pending', 'active'])->exists()) {
             return __('This name is a reseller\'s panel sign-in address.');
         }
 
@@ -1261,6 +1261,21 @@ class DomainService
         return in_array($foreign->name, $parents, true)
             ? __('This domain is a subdomain of a domain that belongs to another account.')
             : __('Another account already uses a subdomain of this domain.');
+    }
+
+    /**
+     * Whether a name is, sits under, or sits above any website on the server,
+     * whoever owns it. A reseller's sign-in domain must clear this so it cannot
+     * be a subdomain of another account's website (which this server already
+     * answers for) or a parent of one.
+     */
+    public function nameClashesWithAnyWebsite(string $name): bool
+    {
+        return Domain::query()
+            ->where(fn (Builder $query) => $query
+                ->whereIn('name', [$name, ...$this->parentNames($name)])
+                ->orWhere('name', 'like', '%.'.$name))
+            ->exists();
     }
 
     /**

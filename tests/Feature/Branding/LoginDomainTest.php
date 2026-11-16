@@ -107,6 +107,33 @@ class LoginDomainTest extends TestCase
         $this->assertDatabaseCount('tasks', 0);
     }
 
+    public function test_a_login_domain_cannot_sit_under_another_accounts_website()
+    {
+        $reseller = User::factory()->reseller()->create();
+        $victim = User::factory()->create();
+        $this->app->make(DomainService::class)->create($victim, 'victim.com', $victim);
+        Task::query()->delete();
+
+        // A subdomain of the website, and the website's own name.
+        foreach (['mail.victim.com', 'victim.com'] as $domain) {
+            $this->actingAs($reseller)
+                ->put(route('reseller.branding.login-domain.update'), ['login_domain' => $domain])
+                ->assertSessionHasErrors('login_domain');
+        }
+
+        $this->assertDatabaseCount('tasks', 0);
+    }
+
+    public function test_a_failed_login_domain_no_longer_blocks_a_website()
+    {
+        ResellerSetting::factory()->create(['login_domain' => 'bigcorp.com', 'login_domain_status' => 'failed']);
+        $account = User::factory()->create();
+
+        $domain = $this->app->make(DomainService::class)->create($account, 'bigcorp.com', $account);
+
+        $this->assertSame('bigcorp.com', $domain->name);
+    }
+
     public function test_a_login_domain_cannot_become_a_website()
     {
         ResellerSetting::factory()->create(['login_domain' => 'panel.webku.id', 'login_domain_status' => 'active']);
