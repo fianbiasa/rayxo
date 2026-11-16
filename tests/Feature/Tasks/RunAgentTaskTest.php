@@ -6,12 +6,14 @@ use App\Agent\AgentClient;
 use App\Agent\AgentException;
 use App\Agent\FakeAgentClient;
 use App\Enums\TaskStatus;
+use App\Events\AgentTaskFinished;
 use App\Jobs\RunAgentTask;
 use App\Models\Task;
 use App\Models\User;
 use App\Services\TaskDispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Mockery\MockInterface;
 use Tests\TestCase;
@@ -79,6 +81,24 @@ class RunAgentTaskTest extends TestCase
         $this->assertSame('Domain already exists.', $task->error);
         $this->assertSame(1, $task->attempts);
         $this->assertNotNull($task->finished_at);
+    }
+
+    public function test_a_task_left_running_by_a_killed_worker_is_failed_not_run_again()
+    {
+        Event::fake([AgentTaskFinished::class]);
+        $this->mock(AgentClient::class, function (MockInterface $mock) {
+            $mock->shouldNotReceive('call');
+        });
+
+        $account = User::factory()->create();
+        $task = Task::create(['user_id' => $account->id, 'action' => 'backup.server_restore', 'status' => TaskStatus::Running]);
+
+        (new RunAgentTask($task))->handle($this->app->make(AgentClient::class));
+
+        // Failed, not run again, so the account's lock is released.
+        $this->assertSame(TaskStatus::Failed, $task->fresh()->status);
+        $this->assertNotNull($task->fresh()->finished_at);
+        Event::assertDispatched(AgentTaskFinished::class);
     }
 
     public function test_finished_tasks_are_not_sent_to_the_agent_again()

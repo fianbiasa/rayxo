@@ -87,6 +87,18 @@ class RunAgentTask implements ShouldQueue
     {
         $this->task->refresh();
 
+        // A task found Running on entry was started by an earlier attempt that
+        // did not finish: the worker was killed or restarted mid-run (a clean
+        // failure goes through failed()). Do not run it again; fail it, so the
+        // account's lock (busy()) is released instead of held forever.
+        if ($this->task->status === TaskStatus::Running) {
+            $this->task->markFailed(__('The task stopped unexpectedly before it finished.'));
+
+            AgentTaskFinished::dispatch($this->task);
+
+            return;
+        }
+
         if ($this->task->status !== TaskStatus::Queued) {
             return;
         }
