@@ -253,6 +253,21 @@ class IpAddressService
                 return;
             }
 
+            // Re-check availability under a lock on the address rows, so two
+            // requests cannot hand the same dedicated address to two accounts
+            // after both passed the check above.
+            foreach (['ipv4_address_id' => $ipv4, 'ipv6_address_id' => $ipv6] as $key => $ipAddress) {
+                if ($ipAddress === null) {
+                    continue;
+                }
+
+                IpAddress::query()->lockForUpdate()->find($ipAddress->id);
+
+                if (! $this->mayHave($account, $ipAddress)) {
+                    throw ValidationException::withMessages([$key => __(':address is not available for this account.', ['address' => $ipAddress->address])]);
+                }
+            }
+
             $account->forceFill(['ipv4_address_id' => $ipv4?->id, 'ipv6_address_id' => $ipv6?->id])->save();
             $account->setRelation('ipv4Address', $ipv4);
             $account->setRelation('ipv6Address', $ipv6);
