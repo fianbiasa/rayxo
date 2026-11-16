@@ -1602,7 +1602,9 @@ restore_system() {
     systemctl stop rayxo-scheduler.timer rayxo-queue.service rayxo-backup-queue.service
 
     mariadb -e 'DROP DATABASE IF EXISTS `rayxo`; CREATE DATABASE `rayxo` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;'
-    mariadb rayxo <"$work/rayxo-system/panel.sql" ||
+    # --binary-mode: treat the dump as data only, so a tampered backup cannot
+    # run client commands such as "\! <shell command>" as root while it loads.
+    mariadb --binary-mode rayxo <"$work/rayxo-system/panel.sql" ||
         { rm -rf "$work"; die "database panel dari backup tidak bisa dimuat (detail di $INSTALL_LOG)"; }
     info "Database panel dipulihkan"
 
