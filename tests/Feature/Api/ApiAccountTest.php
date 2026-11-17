@@ -44,6 +44,19 @@ class ApiAccountTest extends TestCase
         LoginKey::factory()->for($this->reseller)->withSecret(self::RESELLER_KEY)->create(['permissions' => $all]);
     }
 
+    public function test_an_account_cannot_be_enumerated_without_a_valid_key()
+    {
+        User::factory()->create(['username' => 'budi', 'owner_id' => $this->reseller->id]);
+
+        // Without a valid key, an existing and a non-existent account must look
+        // the same, so the API cannot be used to learn which usernames exist.
+        $existing = $this->getJson('/api/v1/accounts/budi');
+        $missing = $this->getJson('/api/v1/accounts/does-not-exist');
+
+        $existing->assertUnauthorized();
+        $missing->assertUnauthorized();
+    }
+
     public function test_hosting_accounts_are_listed_for_whoever_manages_them()
     {
         User::factory()->create(['username' => 'budi', 'owner_id' => $this->reseller->id]);
