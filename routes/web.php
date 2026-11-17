@@ -57,10 +57,17 @@ use App\Services\BackupService;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
 
-Route::get('login-link/{token}', LoginLinkController::class)
+Route::get('login-link/{token}', [LoginLinkController::class, 'show'])
     ->where('token', '[A-Za-z0-9]{64}')
     ->middleware('throttle:30,1,login-link')
     ->name('login-link');
+
+// Confirming a login link while already signed in: a CSRF-protected POST, so
+// a GET cannot swap an open session (login CSRF).
+Route::post('login-link/{token}', [LoginLinkController::class, 'confirm'])
+    ->where('token', '[A-Za-z0-9]{64}')
+    ->middleware('throttle:30,1,login-link')
+    ->name('login-link.confirm');
 
 Route::redirect('/', '/dashboard')->name('home');
 
