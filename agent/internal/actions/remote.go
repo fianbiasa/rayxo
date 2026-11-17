@@ -255,7 +255,7 @@ func (r remoteActions) download(ctx context.Context, raw json.RawMessage) (any, 
 		return nil, remoteError(err)
 	}
 
-	result, err := r.accept(params, part)
+	result, err := r.accept(ctx, params, part)
 	if err != nil {
 		_ = os.Remove(part)
 
@@ -285,7 +285,7 @@ func (r remoteActions) download(ctx context.Context, raw json.RawMessage) (any, 
 
 // accept checks a downloaded backup and gives it the owner and mode of the
 // backups the agent makes.
-func (r remoteActions) accept(params remoteFileParams, part string) (map[string]any, error) {
+func (r remoteActions) accept(ctx context.Context, params remoteFileParams, part string) (map[string]any, error) {
 	file, err := os.Open(part)
 	if err != nil {
 		return nil, fmt.Errorf("open the downloaded backup: %w", err)
@@ -308,7 +308,7 @@ func (r remoteActions) accept(params remoteFileParams, part string) (map[string]
 		return result, file.Chmod(0o600)
 	}
 
-	meta, err := files.ReadBackupMeta(file)
+	meta, err := files.ReadBackupMetaVerified(ctx, file)
 	if err != nil {
 		return nil, fileError(err)
 	}

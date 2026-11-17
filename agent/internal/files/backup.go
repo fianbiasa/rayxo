@@ -3,6 +3,7 @@ package files
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -133,6 +134,73 @@ func ReadBackupMeta(backup io.Reader) (BackupMeta, error) {
 		} else {
 			meta.Settings = string(content)
 		}
+	}
+
+	if meta.Manifest == "" {
+		return meta, errorf(ReasonInvalid, "the file is not a RAYXO backup")
+	}
+
+	return meta, nil
+}
+
+// ReadBackupMetaVerified reads the manifest and settings like ReadBackupMeta,
+// then reads the rest of the archive through to its end, so a truncated or
+// corrupt backup is refused here instead of being accepted and only failing
+// later at restore. It reads through ctx, so a large backup stops at the
+// request's deadline rather than running on.
+func ReadBackupMetaVerified(ctx context.Context, backup io.Reader) (BackupMeta, error) {
+	var meta BackupMeta
+
+	compressed, err := gzip.NewReader(ctxReader{ctx: ctx, r: backup})
+	if err != nil {
+		return meta, errorf(ReasonInvalid, "the file is not a RAYXO backup")
+	}
+	defer compressed.Close()
+
+	reader := tar.NewReader(compressed)
+	damaged := func(err error) error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+
+		return errorf(ReasonInvalid, "the backup is damaged: %v", err)
+	}
+
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		if err != nil {
+			return meta, damaged(err)
+		}
+
+		name := path.Clean(strings.TrimPrefix(header.Name, "./"))
+		if header.Typeflag != tar.TypeReg || (name != BackupManifest && name != BackupSettings) {
+			continue
+		}
+
+		if header.Size > maxBackupMeta {
+			return meta, errorf(ReasonTooLarge, "%s of the backup is too large", name)
+		}
+
+		content, err := io.ReadAll(io.LimitReader(reader, maxBackupMeta))
+		if err != nil {
+			return meta, damaged(err)
+		}
+
+		if name == BackupManifest {
+			meta.Manifest = string(content)
+		} else {
+			meta.Settings = string(content)
+		}
+	}
+
+	// Read past the tar's end marker so the gzip trailer is checked too: a
+	// backup cut short in its trailer fails here, not at restore.
+	if _, err := io.Copy(io.Discard, compressed); err != nil {
+		return meta, damaged(err)
 	}
 
 	if meta.Manifest == "" {

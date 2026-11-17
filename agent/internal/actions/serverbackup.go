@@ -167,7 +167,7 @@ func (p serverBackupImportParams) validate() error {
 // as if the agent had made it. It is moved, not copied, so a backup of
 // many gigabytes does not need its size twice; the file moved must be the
 // one opened and checked. Its manifest and settings are returned.
-func (s serverBackupActions) importUpload(_ context.Context, raw json.RawMessage) (any, error) {
+func (s serverBackupActions) importUpload(ctx context.Context, raw json.RawMessage) (any, error) {
 	params, err := decodeWebParams[serverBackupImportParams](raw)
 	if err != nil {
 		return nil, err
@@ -190,7 +190,7 @@ func (s serverBackupActions) importUpload(_ context.Context, raw json.RawMessage
 	}
 	defer upload.Close()
 
-	meta, err := files.ReadBackupMeta(upload)
+	meta, err := files.ReadBackupMetaVerified(ctx, upload)
 	if err != nil {
 		_ = os.Remove(s.transfers.UploadPath(params.Transfer))
 
