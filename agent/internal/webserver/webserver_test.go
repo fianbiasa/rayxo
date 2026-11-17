@@ -53,6 +53,7 @@ func newEnv(t *testing.T) *testEnv {
 		NginxDir:  filepath.Join(base, "etc/nginx/rayxo"),
 		ApacheDir: filepath.Join(base, "etc/apache2/rayxo"),
 		PoolDir:   filepath.Join(base, "etc/rayxo/php-fpm"),
+		GuardDir:  filepath.Join(base, "usr/local/rayxo/guard"),
 		UnitDir:   filepath.Join(base, "etc/systemd/system"),
 		LogDir:    filepath.Join(base, "var/log/rayxo/domains"),
 		LogGroup:  currentGroup(t),
@@ -476,9 +477,14 @@ func TestRenderedApacheVhost(t *testing.T) {
 		"ErrorLog "+env.cfg.LogDir+"/example.com.apache-error.log\n",
 		"DirectoryIndex index.php index.html index.htm\n",
 		"<FilesMatch \"\\.(php|phtml)$\">\n        SetHandler \"proxy:unix:/run/rayxo-php/php84-budi-a379a6f6eeaf.sock|fcgi://php84-budi-a379a6f6eeaf\"\n    </FilesMatch>",
+		"ProxyFCGISetEnvIf \"true\" RAYXO_POOL_OWNER \"budi\"\n",
 		"</VirtualHost>\n",
 	)
 	assertNotContains(t, "apache vhost", apache, "CustomLog", "<no value>")
+
+	// The pool runs the account's guard, and its owner matches the vhost.
+	guard := env.read(filepath.Join(env.cfg.GuardDir, "budi.php"))
+	assertContains(t, "guard", guard, "$_SERVER['RAYXO_POOL_OWNER'] ?? ''", "!== 'budi'", "http_response_code(403)")
 }
 
 func TestWebsiteServedFromItsOwnFolder(t *testing.T) {
@@ -576,12 +582,13 @@ func TestRenderedPoolAndUnit(t *testing.T) {
 		"env[TMPDIR] = /home/budi/tmp\n",
 		"env[PATH] = /usr/local/bin:/usr/bin:/bin\n",
 		"security.limit_extensions = .php .phtml\n",
-		"php_admin_value[open_basedir] = /home/budi/:/usr/share/php/\n",
+		"php_admin_value[open_basedir] = /home/budi/:/usr/share/php/:"+env.cfg.GuardDir+"/budi.php\n",
 		"php_admin_value[upload_tmp_dir] = /home/budi/tmp\n",
 		"php_admin_value[session.save_path] = /home/budi/tmp\n",
 		"php_admin_value[sys_temp_dir] = /home/budi/tmp\n",
 		"php_admin_value[disable_functions] = exec,passthru,shell_exec,system,proc_open,popen,pcntl_exec\n",
 		"php_admin_flag[allow_url_include] = off\n",
+		"php_admin_value[auto_prepend_file] = "+env.cfg.GuardDir+"/budi.php\n",
 		"php_flag[display_errors] = off\n"+
 			"php_value[max_execution_time] = 120\n"+
 			"php_value[max_input_time] = 120\n"+

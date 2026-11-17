@@ -110,7 +110,10 @@ type poolData struct {
 	Section  string
 	Socket   string
 	PoolName string
-	Settings []phpSetting
+	// GuardFile is the account's prepend (auto_prepend_file), run before every
+	// request to reject one routed to this pool from another account.
+	GuardFile string
+	Settings  []phpSetting
 	// LimitExtensions are the only files the pool runs: .php, .phtml and
 	// the website's own PHP extensions.
 	LimitExtensions string
@@ -230,6 +233,7 @@ func (m *Manager) sitePoolData(site Site) poolData {
 		Section:    site.Domain,
 		Socket:     m.cfg.RunDir + "/" + name + ".sock",
 		PoolName:   name,
+		GuardFile:  m.guardFile(site.User),
 		Settings:   phpSettingsData(site.PHPSettings),
 		// Apache hands the pool exactly these files (phpPattern).
 		LimitExtensions: limitExtensions(site.PHPExtensions),
@@ -251,6 +255,7 @@ func (m *Manager) legacyPoolData(user, version string) poolData {
 		Section:         user,
 		Socket:          m.cfg.RunDir + "/" + name + ".sock",
 		PoolName:        name,
+		GuardFile:       m.guardFile(user),
 		Settings:        phpSettingsData(nil),
 		LimitExtensions: limitExtensions(nil),
 		Manager:         m.poolManager(),

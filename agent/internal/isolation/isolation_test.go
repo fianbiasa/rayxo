@@ -68,6 +68,7 @@ func TestAnAccountCannotReadAnotherAccountsFiles(t *testing.T) {
 	t.Run("through the panel's PHP-FPM pool", s.throughPanelPool)
 	t.Run("through .htaccess PHP setting injection", s.throughIniInjection)
 	t.Run("a normal app .htaccess still works", s.legitHtaccess)
+	t.Run("the pool owner cannot be forged from .htaccess", s.guardOwnerCannotBeForged)
 	t.Run("through the file manager", s.throughFileManager)
 	t.Run("through a symlinked document root", s.throughDocumentRootSymlink)
 	t.Run("a home opened to others would be caught", s.openedHomeIsCaught)
@@ -343,6 +344,26 @@ func (s *server) legitHtaccess(t *testing.T) {
 	status, body := get(t, s.a.domain, "/app/does-not-exist")
 	if status != http.StatusOK || body != "app-ok" {
 		t.Errorf("a normal app .htaccess broke: GET /app/does-not-exist => %d %q (want 200 \"app-ok\")", status, body)
+	}
+}
+
+// guardOwnerCannotBeForged proves the per-pool guard cannot be fooled: a
+// request routed to another account's pool carries the requesting account's
+// RAYXO_POOL_OWNER, which that account's own Apache vhost forces after
+// .htaccess has run. If .htaccess could set it, cross-tenant routing would
+// pass the guard. The test sets it to the victim from the attacker's own
+// .htaccess; the attacker's vhost must override it back, so the attacker's own
+// request still succeeds (were the forgery to win, the attacker's own pool
+// guard would reject it).
+func (s *server) guardOwnerCannotBeForged(t *testing.T) {
+	forge := mkdirAs(t, s.a, filepath.Join(s.a.docroot(), "forge"))
+	writeAs(t, s.a, filepath.Join(forge, ".htaccess"),
+		"RewriteEngine On\nRewriteRule ^who\\.php$ - [E=RAYXO_POOL_OWNER:"+s.b.Username+"]\n")
+	writeAs(t, s.a, filepath.Join(forge, "who.php"), "<?php echo 'OK';\n")
+
+	status, body := get(t, s.a.domain, "/forge/who.php")
+	if status != http.StatusOK || body != "OK" {
+		t.Errorf("GET /forge/who.php => %d %q: the vhost must force RAYXO_POOL_OWNER so .htaccess cannot forge it (want 200 \"OK\")", status, body)
 	}
 }
 

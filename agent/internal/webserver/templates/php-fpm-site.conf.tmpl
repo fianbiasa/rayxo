@@ -18,12 +18,15 @@ env[PATH] = /usr/local/bin:/usr/bin:/bin
 security.limit_extensions = {{.LimitExtensions}}
 
 ; Fixed for every site of this account.
-php_admin_value[open_basedir] = {{.Home}}/:/usr/share/php/
+php_admin_value[open_basedir] = {{.Home}}/:/usr/share/php/:{{.GuardFile}}
 php_admin_value[upload_tmp_dir] = {{.Home}}/tmp
 php_admin_value[session.save_path] = {{.Home}}/tmp
 php_admin_value[sys_temp_dir] = {{.Home}}/tmp
 php_admin_value[disable_functions] = exec,passthru,shell_exec,system,proc_open,popen,pcntl_exec
 php_admin_flag[allow_url_include] = off
+; Run the account's guard before every request: it rejects a request routed to
+; this pool from another account's website (a crafted .htaccess).
+php_admin_value[auto_prepend_file] = {{.GuardFile}}
 
 ; Set in the panel; the site may still change them (ini_set, .user.ini).
 {{- range .Settings}}

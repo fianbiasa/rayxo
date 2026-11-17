@@ -60,6 +60,7 @@ func newWebEnv(t *testing.T) *webEnv {
 		NginxDir:             filepath.Join(base, "nginx"),
 		ApacheDir:            filepath.Join(base, "apache2"),
 		PoolDir:              filepath.Join(base, "php-fpm"),
+		GuardDir:             filepath.Join(base, "guard"),
 		UnitDir:              filepath.Join(base, "systemd"),
 		LogDir:               filepath.Join(base, "log"),
 		RunDir:               "/run/rayxo-php",

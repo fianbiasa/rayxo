@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -219,6 +220,33 @@ func (m *Manager) ensureUnit(ctx context.Context, version string) (bool, error) 
 	return true, nil
 }
 
+// guardFile is the path to the account's prepend guard.
+func (m *Manager) guardFile(user string) string {
+	return filepath.Join(m.cfg.GuardDir, user+".php")
+}
+
+// writeGuard writes the account's prepend guard, run before every request to
+// its pools (auto_prepend_file). It rejects a request whose RAYXO_POOL_OWNER,
+// forced by the account's own Apache vhost, is not this account, so a request
+// routed to the pool from another account's website gets a 403.
+func (m *Manager) writeGuard(user string) error {
+	content, err := render("php-guard.php.tmpl", accountData{User: user})
+	if err != nil {
+		return err
+	}
+
+	path := m.guardFile(user)
+	if sameContent(path, content) {
+		return nil
+	}
+
+	if err := ensureDir(m.cfg.GuardDir, 0o755); err != nil {
+		return err
+	}
+
+	return writeFileAtomic(path, content, 0o644, nil)
+}
+
 // writePool installs the pool section of site and the main configuration
 // of its account's pool, which includes the section of every website. The
 // main configuration keeps the account's old single pool while an Apache
@@ -227,6 +255,11 @@ func (m *Manager) ensureUnit(ctx context.Context, version string) (bool, error) 
 // installed. It reports whether anything changed.
 func (m *Manager) writePool(ctx context.Context, site Site) (bool, error) {
 	user, version := site.User, site.PHPVersion
+
+	// The pool's auto_prepend_file points at this, so it must exist first.
+	if err := m.writeGuard(user); err != nil {
+		return false, err
+	}
 
 	section, err := render("php-fpm-site.conf.tmpl", m.sitePoolData(site))
 	if err != nil {

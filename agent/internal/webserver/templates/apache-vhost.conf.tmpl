@@ -21,6 +21,11 @@
     <FilesMatch "\.({{.PHPPattern}})$">
         SetHandler "proxy:unix:{{.Socket}}|fcgi://{{.PoolName}}"
     </FilesMatch>
+
+    # Tell the pool which account this request belongs to; the pool's guard
+    # refuses a request routed here from another account. .htaccess cannot
+    # change this, because Apache sets it after .htaccess has run.
+    ProxyFCGISetEnvIf "true" RAYXO_POOL_OWNER "{{.User}}"
 {{- else}}
 
     DirectoryIndex index.html index.htm

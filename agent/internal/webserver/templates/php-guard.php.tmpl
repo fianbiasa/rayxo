@@ -1,0 +1,12 @@
+<?php
+// PHP-FPM guard of account {{.User}}, run before every request of its pools
+// (auto_prepend_file). Written by rayxod; changes are overwritten.
+//
+// A website runs in its own account's pool. If a request is routed to this
+// pool from another account's website (for example a crafted .htaccess that
+// points at this pool's socket), reject it: the account's own Apache vhost
+// forces RAYXO_POOL_OWNER to its username, which .htaccess cannot change.
+if (($_SERVER['RAYXO_POOL_OWNER'] ?? '') !== '{{.User}}') {
+    http_response_code(403);
+    exit;
+}

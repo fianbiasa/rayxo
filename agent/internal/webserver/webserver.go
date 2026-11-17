@@ -59,6 +59,9 @@ type Config struct {
 	ApacheDir string
 	// PoolDir holds the PHP-FPM pools, <PoolDir>/<version>/<user>.conf.
 	PoolDir string
+	// GuardDir holds the per-account prepend guards, <GuardDir>/<user>.php,
+	// that reject a request routed to the account's pool from another account.
+	GuardDir string
 	// UnitDir is where the systemd template units rayxo-php<ver>@.service go.
 	UnitDir string
 	// LogDir holds <domain>.access.log, .error.log and .apache-error.log.
@@ -151,6 +154,7 @@ func DefaultConfig() Config {
 		NginxDir:       "/etc/nginx/rayxo",
 		ApacheDir:      "/etc/apache2/rayxo",
 		PoolDir:        "/etc/rayxo/php-fpm",
+		GuardDir:       "/usr/local/rayxo/guard",
 		UnitDir:        "/etc/systemd/system",
 		LogDir:         "/var/log/rayxo/domains",
 		LogGroup:       "adm",
