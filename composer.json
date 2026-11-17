@@ -1,11 +1,14 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/react-starter-kit",
+    "name": "fianbiasa/rayxo",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "description": "Free, open-source web hosting control panel for Ubuntu VPS.",
     "keywords": [
         "laravel",
-        "framework"
+        "hosting",
+        "control-panel",
+        "cpanel",
+        "directadmin"
     ],
     "license": "AGPL-3.0-only",
     "require": {
