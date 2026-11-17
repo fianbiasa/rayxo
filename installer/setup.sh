@@ -25,7 +25,7 @@ readonly PHP_BIN="/usr/bin/php$PHP_VERSION"
 # an earlier install says otherwise, and the packages each one gets. A
 # package a version does not have (8.5 has opcache built in) is skipped.
 readonly DEFAULT_SITE_PHP_VERSIONS="7.4 8.0 8.1 8.2 8.3 8.4 8.5"
-readonly SITE_PHP_PACKAGES="fpm cli common mysql mbstring xml curl intl zip bcmath opcache readline gd imagick soap"
+readonly SITE_PHP_PACKAGES="fpm cli common mysql sqlite3 mbstring xml curl intl zip bcmath opcache readline gd imagick soap"
 readonly PANEL_USER="rayxo"
 # The panel's port: 2222 unless chosen otherwise (--panel-port, or from the
 # panel), remembered in PANEL_PORT_FILE for later runs.

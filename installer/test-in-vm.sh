@@ -265,5 +265,11 @@ step "Isolation test: accounts cannot read each other's files"
 as_root "$remote_dir/isolation.test" -test.v 2>&1 | tail -n 25
 [[ "${PIPESTATUS[0]}" -eq 0 ]] || die "the isolation test failed"
 
+# A migrated app on SQLite (Laravel's default database) needs the pdo_sqlite
+# driver; without php<ver>-sqlite3 it fails with "could not find driver".
+step "Site PHP has the SQLite driver"
+as_root php8.4 -m 2>/dev/null | grep -qx pdo_sqlite ||
+    die "pdo_sqlite is not loaded in PHP 8.4 (php8.4-sqlite3 missing)"
+
 passed=1
 step "Passed: a clean install works end to end"
