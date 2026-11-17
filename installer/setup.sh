@@ -1944,6 +1944,19 @@ configure_nginx() {
     # A port tried from the panel is now the panel's port, or given up.
     rm -f "$PANEL_PORT_TRIAL_SITE"
 
+    # Let Nginx bind a website's extra IP even before that address is on an
+    # interface: after a reboot Nginx can start before rayxod re-adds the
+    # accounts' IPs, and without this it would fail to bind one and not start.
+    # The drop-in persists, so systemd re-applies it on every boot.
+    {
+        printf '# Written by rayxo setup.sh: Nginx binds websites extra IPs before they are up.\n'
+        printf 'net.ipv4.ip_nonlocal_bind = 1\n'
+        if grep -q . /proc/net/if_inet6 2>/dev/null; then
+            printf 'net.ipv6.ip_nonlocal_bind = 1\n'
+        fi
+    } >/etc/sysctl.d/99-rayxo.conf
+    sysctl -qp /etc/sysctl.d/99-rayxo.conf >/dev/null 2>&1 || true
+
     quietly nginx -t
     # A restart switches the workers to rayxo-nginx the first time; after that a
     # reload is enough and keeps the panel serving during updates.

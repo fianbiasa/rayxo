@@ -288,5 +288,14 @@ done
 echo "    Nginx=rayxo-nginx, Apache=www-data; panel sockets group rayxo-nginx"
 ' || die "the web front end is not isolated as expected"
 
+# Nginx must be able to bind a website's extra IP before that address is back on
+# an interface (after a reboot it can start before rayxod re-adds the IPs).
+step "Nginx may bind website IPs before they are up (ip_nonlocal_bind)"
+as_root bash -c '
+set -e
+[ "$(sysctl -n net.ipv4.ip_nonlocal_bind)" = 1 ] || { echo "net.ipv4.ip_nonlocal_bind is $(sysctl -n net.ipv4.ip_nonlocal_bind), not 1"; exit 1; }
+echo "    net.ipv4.ip_nonlocal_bind = 1"
+' || die "ip_nonlocal_bind is not set after install"
+
 passed=1
 step "Passed: a clean install works end to end"
