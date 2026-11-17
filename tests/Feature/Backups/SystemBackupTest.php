@@ -115,6 +115,9 @@ class SystemBackupTest extends TestCase
 
         [, $params] = collect($this->agentCalls)->firstWhere(0, 'backup.system_create');
         $this->assertSame([$backup->name, 'RAYXO', 'panel.example.com', 2], [$params['name'], $params['manifest']['panel'], $params['manifest']['hostname'], $params['manifest']['accounts']]);
+        // The newest migration is recorded so a restore can refuse a backup
+        // made by a panel newer than the code it is restored with.
+        $this->assertNotEmpty($params['manifest']['migration']);
         $this->assertSame([ServerBackupStatus::Completed, 4096], [$backup->fresh()->status, $backup->fresh()->size_bytes]);
         $this->assertSame([['names' => [$older[0]->name]]], collect($this->agentCalls)->where(0, 'backup.system_delete')->pluck(1)->values()->all());
         $this->assertModelMissing($older[0]);

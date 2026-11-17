@@ -12,6 +12,7 @@ use App\Models\Setting;
 use App\Models\SystemBackup;
 use App\Models\User;
 use App\Support\NotificationEvents;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -136,6 +137,10 @@ class SystemBackupService
                     'created_at' => now()->toIso8601String(),
                     'accounts' => User::query()->where('role', Role::User)->count(),
                     'domains' => Domain::query()->count(),
+                    // The newest migration this schema has, so a restore can
+                    // refuse a backup made by a panel newer than the code it is
+                    // being restored with (migrations only go forward).
+                    'migration' => (string) DB::table('migrations')->orderByDesc('id')->value('migration'),
                 ],
             ], 3600);
         } catch (AgentException $exception) {

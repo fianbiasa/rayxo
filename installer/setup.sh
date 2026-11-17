@@ -503,6 +503,27 @@ guard_downgrade() {
     fi
 }
 
+# guard_restore_target refuses a --restore-system onto a server that already
+# runs the panel with hosting accounts, unless --force. It is called in
+# preflight (before anything is reconfigured) and again right before the
+# database is dropped. Fail-closed: if the panel database is present but its
+# accounts cannot be counted, it stops rather than risk overwriting them. On a
+# fresh server (no MariaDB, or no rayxo database yet) there is nothing to guard.
+guard_restore_target() {
+    ((force)) && return 0
+    command -v mariadb >/dev/null || return 0
+    systemctl is-active --quiet mariadb 2>/dev/null || return 0
+    mariadb -N -e "SHOW DATABASES LIKE 'rayxo'" 2>/dev/null | grep -qx rayxo || return 0
+
+    local hosting
+    hosting="$(mariadb -N rayxo -e "SELECT COUNT(*) FROM users WHERE role = 'user'" 2>/dev/null)" ||
+        die "database panel 'rayxo' ada tapi jumlah akun hosting tidak bisa dibaca; batal demi keamanan (tambahkan --force kalau memang mau menimpanya)"
+
+    if [[ "$hosting" != 0 ]]; then
+        die "panel di server ini sudah punya $hosting akun hosting; backup sistem hanya dipulihkan di server baru (atau tambahkan --force untuk menimpanya)"
+    fi
+}
+
 latest_release_version() {
     local response
     response="$(curl -fsSL --proto '=https' --max-time 20 -H 'Accept: application/vnd.github+json' \
@@ -526,6 +547,9 @@ preflight() {
 
     if [[ -n "$restore_file" ]]; then
         check_restore_file
+        # Refuse a restore onto a server that already has hosting accounts now,
+        # before anything is reconfigured, not after.
+        guard_restore_target
     fi
 
     [[ -r /etc/os-release ]] || die "tidak bisa membaca /etc/os-release"
@@ -1617,11 +1641,9 @@ check_restore_file() {
 restore_system() {
     step "Memulihkan panel dari backup sistem"
 
-    local hosting
-    hosting="$(mariadb -N rayxo -e "SELECT COUNT(*) FROM users WHERE role = 'user'" 2>/dev/null || printf 0)"
-    if [[ "$hosting" != 0 && $force -eq 0 ]]; then
-        die "panel di server ini sudah punya $hosting akun hosting; backup sistem hanya dipulihkan di server baru (atau tambahkan --force untuk menimpanya)"
-    fi
+    # Checked in preflight already; check again right before the database is
+    # dropped, in case accounts appeared since (fail-closed, honors --force).
+    guard_restore_target
 
     local work
     work="$(mktemp -d /root/rayxo-restore.XXXXXX)"
@@ -1633,6 +1655,17 @@ restore_system() {
     if [[ ! "$key" =~ ^base64:[A-Za-z0-9+/=]+$ ]]; then
         rm -rf "$work"
         die "backup sistem tidak berisi APP_KEY panel"
+    fi
+
+    # Refuse a backup made by a panel newer than this code: migrations only go
+    # forward, so if this release has no migration file for the backup's newest
+    # migration, its schema would be left incomplete. Older backups have no
+    # migration in their manifest and are not checked.
+    local backup_migration
+    backup_migration="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get("migration", ""))' "$work/rayxo-system/manifest.json" 2>/dev/null || true)"
+    if [[ -n "$backup_migration" && ! -f "$INSTALL_DIR/current/panel/database/migrations/$backup_migration.php" ]]; then
+        rm -rf "$work"
+        die "backup sistem dibuat oleh panel versi lebih baru (migrasi $backup_migration tidak ada di rilis ini); pasang RAYXO versi itu atau yang lebih baru, lalu ulangi"
     fi
 
     systemctl stop rayxo-scheduler.timer rayxo-queue.service rayxo-backup-queue.service
@@ -1657,6 +1690,15 @@ restore_system() {
         cp -R "$work/rayxo-system/opendkim-keys/." /etc/opendkim/keys/
         chown -R opendkim:opendkim /etc/opendkim/keys
         find /etc/opendkim/keys -type f -name '*.private' -exec chmod 0600 {} +
+
+        # configure_dkim already started opendkim with a freshly generated key;
+        # load the restored one instead, and recompute the public key so the DNS
+        # report shows the record the restored key publishes (not the new one).
+        local restored_key="/etc/opendkim/keys/$server_hostname/$DKIM_SELECTOR.private"
+        if [[ -f "$restored_key" ]]; then
+            systemctl restart opendkim || true
+            dkim_public_key="$(openssl rsa -in "$restored_key" -pubout -outform DER 2>/dev/null | base64 -w0)"
+        fi
         info "Kunci DKIM hostname dipulihkan"
     fi
 
@@ -1665,6 +1707,8 @@ restore_system() {
         cp -R "$work/rayxo-system/rspamd-dkim/." "$RSPAMD_DKIM_DIR/"
         chown -R _rspamd:_rspamd "$RSPAMD_DKIM_DIR"
         find "$RSPAMD_DKIM_DIR" -type f -exec chmod 0640 {} +
+        # Rspamd signs hosting domains' mail; it must load the restored keys.
+        systemctl reload rspamd 2>/dev/null || systemctl restart rspamd || true
         info "Kunci DKIM domain dipulihkan"
     fi
 
@@ -3194,12 +3238,39 @@ configure_cron_slices() {
     info "Cron job akun hosting berjalan di slice resource akunnya ($file)"
 }
 
+# wait_for_backups_idle waits, up to a bound, for a running backup to finish, so
+# restarting rayxod and the backup worker during an upgrade does not cut a
+# backup short. It is best effort: if it cannot tell (fresh install, or the
+# query fails) it returns at once rather than hold the upgrade up.
+wait_for_backups_idle() {
+    command -v mariadb >/dev/null || return 0
+    systemctl is-active --quiet mariadb 2>/dev/null || return 0
+
+    local deadline=$((SECONDS + 300)) running told=0
+    while ((SECONDS < deadline)); do
+        running="$(mariadb -N rayxo -e "SELECT
+            (SELECT COUNT(*) FROM server_backups WHERE status = 'running') +
+            (SELECT COUNT(*) FROM backup_runs WHERE status = 'running')" 2>/dev/null)" || return 0
+        [[ "${running//[[:space:]]/}" == 0 ]] && return 0
+
+        if ((! told)); then
+            info "Menunggu backup yang sedang berjalan selesai sebelum me-restart worker..."
+            told=1
+        fi
+        sleep 10
+    done
+
+    warn "backup masih berjalan setelah menunggu; worker tetap di-restart (backup itu diulang otomatis)"
+}
+
 install_services() {
     step "Memasang service systemd"
 
     install -m 0644 "$release_dir"/systemd/*.service "$release_dir"/systemd/*.timer /etc/systemd/system/
     systemctl daemon-reload
     quietly systemctl enable rayxod.service rayxo-queue.service rayxo-backup-queue.service rayxo-scheduler.timer
+    # Don't cut a running backup short when restarting rayxod and the workers.
+    wait_for_backups_idle
     systemctl restart rayxod.service rayxo-queue.service rayxo-backup-queue.service
     systemctl start rayxo-scheduler.timer
     info "rayxod, queue worker, worker backup dan scheduler berjalan"
