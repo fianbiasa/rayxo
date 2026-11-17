@@ -25,6 +25,9 @@ readonly PHP_BIN="/usr/bin/php$PHP_VERSION"
 # an earlier install says otherwise, and the packages each one gets. A
 # package a version does not have (8.5 has opcache built in) is skipped.
 readonly DEFAULT_SITE_PHP_VERSIONS="7.4 8.0 8.1 8.2 8.3 8.4 8.5"
+# How many release trees to keep under releases/ (the active one and one
+# previous); older trees are removed after a successful install (prune_releases).
+readonly RELEASES_KEEP=2
 readonly SITE_PHP_PACKAGES="fpm cli common mysql sqlite3 mbstring xml curl intl zip bcmath opcache readline gd imagick soap"
 readonly PANEL_USER="rayxo"
 # The panel's port: 2222 unless chosen otherwise (--panel-port, or from the
@@ -1688,6 +1691,50 @@ activate_release() {
     ln -sfn current/bin "$INSTALL_DIR/bin"
     ln -sfn "$INSTALL_DIR/bin/rayxo" /usr/local/bin/rayxo
     info "$INSTALL_DIR/current -> releases/$version"
+}
+
+# An update unpacks the new release beside the old one under releases/ and
+# repoints current, so without cleanup every release tree piles up. Rollback
+# is not supported (an older release is refused), so keep only the active
+# release and RELEASES_KEEP-1 of the most recent others, and remove older
+# trees and any .replaced-* copy a reinstall or interrupted run left behind.
+# Takes the install dir as its first argument so it can run on a test tree.
+prune_releases() {
+    local base="${1:-$INSTALL_DIR}"
+    local releases="$base/releases"
+    [[ -d "$releases" ]] || return 0
+
+    local current_base
+    current_base="$(basename "$(readlink "$base/current" 2>/dev/null)")"
+
+    local dir name removed=0 others_kept=0
+    local -a kept=()
+
+    for dir in "$releases"/*.replaced-*; do
+        [[ -e "$dir" ]] || continue
+        rm -rf "$dir"
+        ((++removed))
+    done
+
+    # Version directories, newest change first: always keep the active one,
+    # and the newest others up to RELEASES_KEEP in all; remove the rest.
+    while IFS= read -r dir; do
+        name="$(basename "$dir")"
+        [[ -d "$dir" && "$name" != *.replaced-* ]] || continue
+        if [[ "$name" == "$current_base" ]]; then
+            kept+=("$name")
+        elif ((others_kept < RELEASES_KEEP - 1)); then
+            kept+=("$name")
+            ((++others_kept))
+        else
+            rm -rf "$dir"
+            ((++removed))
+        fi
+    done < <(ls -1dt "$releases"/*/ 2>/dev/null)
+
+    if ((removed)); then
+        info "Rilis lama dibersihkan: $removed dihapus (disimpan: ${kept[*]})"
+    fi
 }
 
 # Port 80 for the hostname: Let's Encrypt challenges, and a redirect to the
@@ -3556,7 +3603,11 @@ main() {
     # leave an admin whose generated password was not shown.
     create_admin
     build_dns_report
+    prune_releases || warn "rilis lama tidak bisa dibersihkan; hapus manual di $INSTALL_DIR/releases"
     summary
 }
 
-main "$@"
+# Guarded so the script can be sourced (for tests) without running the installer.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
