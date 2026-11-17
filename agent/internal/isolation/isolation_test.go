@@ -65,6 +65,9 @@ func TestAnAccountCannotReadAnotherAccountsFiles(t *testing.T) {
 	t.Run("through symlinks served by Nginx and Apache", s.throughSymlinks)
 	t.Run("through .htaccess", s.throughHtaccess)
 	t.Run("through the other account's PHP-FPM socket", s.throughPHPSocket)
+	t.Run("through the panel's PHP-FPM pool", s.throughPanelPool)
+	t.Run("through .htaccess PHP setting injection", s.throughIniInjection)
+	t.Run("a normal app .htaccess still works", s.legitHtaccess)
 	t.Run("through the file manager", s.throughFileManager)
 	t.Run("through a symlinked document root", s.throughDocumentRootSymlink)
 	t.Run("a home opened to others would be caught", s.openedHomeIsCaught)
@@ -257,6 +260,89 @@ func (s *server) throughPHPSocket(t *testing.T) {
 
 	if _, body := get(t, s.a.domain, "/connect.php"); body != "refused" {
 		t.Errorf("%s's website can connect to %s's PHP-FPM socket %s: %q", s.a.Username, s.b.Username, socket, body)
+	}
+}
+
+// throughPanelPool tries to get the attacker's .htaccess to run code in the
+// panel's own PHP-FPM pool (user rayxo), which could read every tenant's data
+// and the panel's secrets. It must not: the override list forbids SetHandler,
+// and the panel pool's open_basedir (and, once Nginx has its own user, the
+// socket's owner) keep a routed request from running there. The probe prints
+// its open_basedir, which would name a panel path only if it ran in that pool.
+func (s *server) throughPanelPool(t *testing.T) {
+	handler := "proxy:unix:/run/php/rayxo.sock|fcgi://localhost"
+
+	jump := mkdirAs(t, s.a, filepath.Join(s.a.docroot(), "jump"))
+	writeAs(t, s.a, filepath.Join(jump, "where.php"), "<?php echo 'BASEDIR:', ini_get('open_basedir');\n")
+
+	for _, route := range []struct{ how, htaccess string }{
+		{"SetHandler", fmt.Sprintf("<FilesMatch \"\\.php$\">\n    SetHandler %q\n</FilesMatch>\n", handler)},
+		{"RewriteRule [H]", fmt.Sprintf("RewriteEngine On\nRewriteRule \\.php$ - [H=%s]\n", handler)},
+	} {
+		writeAs(t, s.a, filepath.Join(jump, ".htaccess"), route.htaccess)
+
+		status, body := get(t, s.a.domain, "/jump/where.php")
+		for _, panelPath := range []string{"/usr/local/rayxo", "/var/lib/rayxo"} {
+			if strings.Contains(body, panelPath) {
+				t.Errorf("%s: GET /jump/where.php (%d) ran in the panel pool (open_basedir has %q):\n%s", route.how, status, panelPath, body)
+			}
+		}
+		t.Logf("panel pool via %s (%d): %q", route.how, status, excerpt(body))
+	}
+}
+
+// throughIniInjection tries to widen the attacker's own pool open_basedir from
+// .htaccess, which together with allow_url_include would let a prepended file
+// run code outside the home. The pool fixes open_basedir as a non-overridable
+// admin value, and Apache strips PHP_VALUE/PHP_ADMIN_VALUE from every proxied
+// request, so a mod_rewrite [E=] must not change it.
+func (s *server) throughIniInjection(t *testing.T) {
+	inject := mkdirAs(t, s.a, filepath.Join(s.a.docroot(), "inject"))
+	writeAs(t, s.a, filepath.Join(inject, ".htaccess"), "RewriteEngine On\nRewriteRule ^basedir\\.php$ - [E=PHP_ADMIN_VALUE:open_basedir=/]\n")
+	writeAs(t, s.a, filepath.Join(inject, "basedir.php"), "<?php echo 'BASEDIR:', ini_get('open_basedir');\n")
+
+	status, body := get(t, s.a.domain, "/inject/basedir.php")
+	if !strings.HasPrefix(body, "BASEDIR:") {
+		t.Fatalf("GET /inject/basedir.php (%d): the probe did not run: %q", status, excerpt(body))
+	}
+
+	if basedir := strings.TrimPrefix(body, "BASEDIR:"); !strings.Contains(basedir, s.a.Home) {
+		t.Errorf("GET /inject/basedir.php (%d): .htaccess widened open_basedir to %q (expected to contain the home %q)", status, basedir, s.a.Home)
+	} else {
+		t.Logf("open_basedir after [E=] injection: %q", basedir)
+	}
+}
+
+// legitHtaccess checks that a normal app .htaccess — the directives WordPress,
+// Laravel and the like use — still works after the override list was narrowed,
+// so the isolation fix did not break real sites. A rejected directive would
+// make Apache return 500 for the directory.
+func (s *server) legitHtaccess(t *testing.T) {
+	app := mkdirAs(t, s.a, filepath.Join(s.a.docroot(), "app"))
+	htaccess := strings.Join([]string{
+		"RewriteEngine On",
+		"RewriteBase /app/",
+		"RewriteCond %{REQUEST_FILENAME} !-f",
+		"RewriteRule ^ index.php [L]",
+		"<IfModule mod_headers.c>",
+		`    Header set X-Frame-Options "SAMEORIGIN"`,
+		"</IfModule>",
+		"<IfModule mod_expires.c>",
+		"    ExpiresActive On",
+		`    ExpiresByType text/css "access plus 1 week"`,
+		"</IfModule>",
+		"AddType application/json .json",
+		"ErrorDocument 404 /app/index.php",
+		"Options -Indexes",
+	}, "\n") + "\n"
+	writeAs(t, s.a, filepath.Join(app, ".htaccess"), htaccess)
+	writeAs(t, s.a, filepath.Join(app, "index.php"), "<?php echo 'app-ok';\n")
+
+	// A missing path rewrites to index.php (the WordPress/Laravel front
+	// controller) and runs it; a rejected directive would 500 instead.
+	status, body := get(t, s.a.domain, "/app/does-not-exist")
+	if status != http.StatusOK || body != "app-ok" {
+		t.Errorf("a normal app .htaccess broke: GET /app/does-not-exist => %d %q (want 200 \"app-ok\")", status, body)
 	}
 }
 
