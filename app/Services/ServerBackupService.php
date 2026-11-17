@@ -517,6 +517,13 @@ class ServerBackupService
             return;
         }
 
+        // Jobs still sit on the backups queue (this run's, or a long job such
+        // as an import or restore it waits behind), so the run is progressing,
+        // not stale, even if no backup has moved for a while.
+        if (DB::table('jobs')->where('queue', self::QUEUE)->exists()) {
+            return;
+        }
+
         $moved = $run->backups()->max('updated_at') ?? $run->started_at;
 
         if ($moved !== null && CarbonImmutable::parse($moved)->greaterThan(now()->subHours(self::STALE_HOURS))) {

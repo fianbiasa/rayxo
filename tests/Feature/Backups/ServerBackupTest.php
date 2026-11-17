@@ -22,6 +22,7 @@ use App\Models\User;
 use App\Services\ServerBackupService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -258,6 +259,25 @@ class ServerBackupTest extends TestCase
         $this->artisan('rayxo:run-backups')->assertSuccessful();
 
         $this->assertSame([BackupRunStatus::Completed, 1], [$run->fresh()->status, $run->fresh()->failed]);
+    }
+
+    public function test_a_stale_run_is_left_open_while_a_job_still_waits_on_the_backups_queue()
+    {
+        $run = BackupRun::factory()->running()->create(['started_at' => now()->subHours(9)]);
+        ServerBackup::factory()->for($run, 'run')->for($this->budi, 'account')->create(['status' => ServerBackupStatus::Queued, 'updated_at' => now()->subHours(8)]);
+
+        // A long import or restore still sits on the backups queue, so this run
+        // is waiting behind it, not stale: closing it would start a second run
+        // on top of the one still working.
+        DB::table('jobs')->insert(['queue' => ServerBackupService::QUEUE, 'payload' => '{}', 'attempts' => 0, 'available_at' => now()->timestamp, 'created_at' => now()->timestamp]);
+
+        app(ServerBackupService::class)->closeStale();
+        $this->assertSame(BackupRunStatus::Running, $run->fresh()->status);
+
+        // Once the queue drains, the stale run is closed so the next can start.
+        DB::table('jobs')->where('queue', ServerBackupService::QUEUE)->delete();
+        app(ServerBackupService::class)->closeStale();
+        $this->assertSame(BackupRunStatus::Completed, $run->fresh()->status);
     }
 
     public function test_the_page_shows_the_schedule_the_disk_the_estimate_and_the_backups()
