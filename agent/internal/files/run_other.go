@@ -14,5 +14,9 @@ func sysProcAttr(account Account) *syscall.SysProcAttr {
 			Gid:    uint32(account.GID),
 			Groups: []uint32{},
 		},
+		Setpgid: true,
 	}
 }
+
+// restrictHelper is a no-op off Linux (development only).
+func restrictHelper() {}

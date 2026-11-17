@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // maxHelperOutput limits what the agent reads from one helper: a full
@@ -62,6 +63,17 @@ func (r Runner) Run(ctx context.Context, account Account, op string, params any,
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	cmd.SysProcAttr = sysProcAttr(account)
+	// On timeout, kill the whole process group (the helper leads one) so a
+	// child it spawned cannot keep running, and bound Wait so a lingering
+	// process or open pipe cannot hold the RPC slot open forever.
+	cmd.Cancel = func() error {
+		if cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+
+		return nil
+	}
+	cmd.WaitDelay = 10 * time.Second
 
 	if data != nil {
 		cmd.ExtraFiles = []*os.File{data}

@@ -9,5 +9,6 @@ import "syscall"
 func sysProcAttr(as Identity) *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{
 		Credential: &syscall.Credential{Uid: uint32(as.UID), Gid: uint32(as.GID), Groups: []uint32{}},
+		Setpgid:    true,
 	}
 }

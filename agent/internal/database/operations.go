@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"syscall"
+	"time"
 
 	"rayxo/agent/internal/validate"
 )
@@ -239,6 +241,14 @@ func importAs(ctx context.Context, as Identity, file string, args []string) erro
 		cmd.Dir = as.Home
 		cmd.Env = env
 		cmd.SysProcAttr = sysProcAttr(as)
+		cmd.Cancel = func() error {
+			if cmd.Process != nil {
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			}
+
+			return nil
+		}
+		cmd.WaitDelay = 10 * time.Second
 	}
 
 	var readErr, loadErr limitedBuffer

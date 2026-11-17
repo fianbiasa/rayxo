@@ -500,6 +500,7 @@ func HelperMain(args []string) int {
 	}
 
 	setUmask()
+	restrictHelper()
 
 	var data *os.File
 	if len(args) > 0 && args[0] == DataArg {
