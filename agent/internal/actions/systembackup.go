@@ -336,6 +336,10 @@ func (s systemBackupActions) ensureDir() error {
 		return fmt.Errorf("%s is not a folder", s.config.SystemDir)
 	}
 
+	// Clear temp files a crashed backup or download left behind before starting
+	// another.
+	sweepStaleTemps(s.config.SystemDir)
+
 	if info.Mode().Perm() != 0o700 {
 		return os.Chmod(s.config.SystemDir, 0o700)
 	}

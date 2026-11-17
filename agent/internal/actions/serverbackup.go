@@ -733,6 +733,10 @@ func (s serverBackupActions) ensureDir() error {
 		return fmt.Errorf("%s is not a folder", s.config.Dir)
 	}
 
+	// Clear temp files a crashed backup, import or download left behind before
+	// starting another.
+	sweepStaleTemps(s.config.Dir)
+
 	if os.Geteuid() != 0 {
 		return nil
 	}
