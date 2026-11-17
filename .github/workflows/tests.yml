@@ -20,7 +20,11 @@ jobs:
           persist-credentials: false
 
       - name: Installer unit tests
-        run: bash installer/tests/prune-releases.sh
+        run: |
+          for test in installer/tests/*.sh; do
+            echo "== $test =="
+            bash "$test"
+          done
 
       - name: Setup PHP
         uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2

@@ -464,6 +464,19 @@ resolve_github_release() {
     release_url="https://github.com/$RELEASE_REPO/releases/download/v$wanted/rayxo-$wanted-linux-$arch.tar.gz"
 }
 
+# release_older_than reports success when release $1 is older than release $2,
+# comparing version numbers with sort -V; a -suffix (like -dev) on $1 is
+# ignored, so 0.7.2-dev counts as 0.7.2. Equal versions are not "older".
+release_older_than() {
+    local a="${1%%-*}" b="$2"
+
+    [[ "$a" != "$b" && "$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -n 1)" == "$a" ]]
+}
+
+# The release that introduced the cron-scope PAM hook; a rayxod older than
+# this does not understand "rayxod cron-scope".
+readonly CRON_SCOPE_SINCE="0.7.2"
+
 # Refuse to install release $1 over a newer release: its code would not know
 # the database the newer one migrated (migrations only go forward), so an
 # old setup.sh from the website could quietly break a server. Development
@@ -472,6 +485,14 @@ resolve_github_release() {
 guard_downgrade() {
     local wanted="$1" installed
     installed="$(head -n 1 "$INSTALL_DIR/current/VERSION" 2>/dev/null || true)"
+
+    # Refused even with --allow-downgrade: a rayxod older than CRON_SCOPE_SINCE
+    # does not understand "rayxod cron-scope", and its setup.sh will not remove
+    # the PAM line (it predates it), so every cron job would run an unknown
+    # command. The admin removes the line first if the downgrade is deliberate.
+    if grep -qsF 'rayxod cron-scope' /etc/pam.d/cron && release_older_than "$wanted" "$CRON_SCOPE_SINCE"; then
+        die "versi $wanted lebih lama dari $CRON_SCOPE_SINCE dan tidak mendukung 'rayxod cron-scope'. Hapus dulu baris '# RAYXO: cron jobs of hosting accounts' dan baris di bawahnya dari /etc/pam.d/cron, lalu jalankan setup.sh lagi"
+    fi
 
     if ((allow_downgrade)) || [[ -z "$installed" || "$installed" == *-* || "$installed" == "$wanted" ]]; then
         return
