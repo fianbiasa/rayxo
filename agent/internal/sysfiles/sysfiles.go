@@ -152,8 +152,13 @@ func (m *Manager) Files() ([]File, error) {
 			Path:  filepath.Join(m.cfg.PHPDir, version, "99-custom.ini"),
 			check: checkINI,
 			// The pools started before their unit read this folder only
-			// get it when they start again.
-			apply: [][]string{{systemctlProgram, "try-restart", "rayxo-php" + tag + "@*.service"}},
+			// get it when they start again. PHP has no config test that
+			// reliably rejects a bad addition here (unknown directives are only
+			// warnings, and a per-version CLI may not be installed), so rely on
+			// rollback: if a pool fails to restart with the new file, put the
+			// old one back and restart with it instead of leaving PHP down.
+			apply:    [][]string{{systemctlProgram, "try-restart", "rayxo-php" + tag + "@*.service"}},
+			rollback: true,
 		})
 	}
 

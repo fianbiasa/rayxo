@@ -227,6 +227,34 @@ func TestPHPAdditionsRestartThePoolsOfTheirVersion(t *testing.T) {
 	}
 }
 
+func TestPHPAdditionsThatStopThePoolsGetTheOldFileBack(t *testing.T) {
+	manager, run, cfg := newManager(t)
+	content, _ := manager.Read("php-8.4")
+	hash, err := manager.Write(context.Background(), "php-8.4", "memory_limit = 256M\n", content.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run.fail["systemctl try-restart rayxo-php84@*.service"] = "Job for rayxo-php84@budi.service failed"
+	run.failOnce = true
+	run.calls = nil
+
+	_, err = manager.Write(context.Background(), "php-8.4", "memory_limit = breaks-the-pool\n", hash)
+
+	var invalid *InvalidError
+	if !errors.As(err, &invalid) || !strings.HasSuffix(invalid.Reason, "the previous file was put back") {
+		t.Fatalf("err = %v", err)
+	}
+
+	if got := read(t, filepath.Join(cfg.PHPDir, "8.4", "99-custom.ini")); got != "memory_limit = 256M\n" {
+		t.Errorf("file = %q; want the previous one back", got)
+	}
+
+	if strings.Join(run.calls, ",") != "systemctl try-restart rayxo-php84@*.service,systemctl try-restart rayxo-php84@*.service" {
+		t.Errorf("calls = %q", run.calls)
+	}
+}
+
 func TestContentIsCheckedBeforeItIsWritten(t *testing.T) {
 	cases := map[string]string{
 		"php-8.4":      "memory_limit 512M\n",
