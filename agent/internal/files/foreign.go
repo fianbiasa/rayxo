@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,23 @@ import (
 	"slices"
 	"strings"
 )
+
+// ctxReader fails a read once ctx is done, so reading a foreign backup
+// through — decompressing and all — stops when the request's deadline passes
+// instead of running on. It wraps the decompressed stream, so even an archive
+// that decompresses to far more than it holds is checked as it is read.
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (c ctxReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+
+	return c.r.Read(p)
+}
 
 // Backups made by other panels (cPanel, DirectAdmin) become RAYXO backups
 // through an import: ReadForeignBackup says which panel made a backup and
@@ -116,7 +134,7 @@ func CheckHomeRule(rule HomeRule) error {
 }
 
 // ReadForeignBackup reads a backup of cPanel or DirectAdmin through.
-func ReadForeignBackup(backup io.Reader) (ForeignInspection, error) {
+func ReadForeignBackup(ctx context.Context, backup io.Reader) (ForeignInspection, error) {
 	inspection := ForeignInspection{Files: map[string]string{}, Databases: []ForeignDump{}, Home: []ForeignHomeEntry{}}
 
 	stream, err := openArchive(backup)
@@ -126,15 +144,22 @@ func ReadForeignBackup(backup io.Reader) (ForeignInspection, error) {
 
 	inspection.Kind = stream.kind()
 	in := &inspector{inspection: &inspection, home: map[string]*ForeignHomeEntry{}}
+	reader := ctxReader{ctx: ctx, r: stream.reader}
 
 	if inspection.Kind == KindDirectAdmin {
-		err = readDirectAdmin(stream.reader, in)
+		err = readDirectAdmin(reader, in)
 	} else {
-		err = readCpanel(stream.reader, in)
+		err = readCpanel(reader, in)
 	}
 
 	if closed := stream.close(err == nil); err == nil {
 		err = closed
+	}
+
+	// A read stopped by the deadline is reported as such, not as a damaged
+	// backup: the inner tar error only carries the context error's text.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return inspection, ctxErr
 	}
 
 	if err != nil {

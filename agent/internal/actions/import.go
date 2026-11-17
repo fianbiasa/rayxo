@@ -128,7 +128,7 @@ func (p importConvertParams) validate() error {
 
 // importInspect implements backup.import_inspect: which panel made a
 // backup in the folder and what it holds, read through once.
-func (s serverBackupActions) importInspect(_ context.Context, raw json.RawMessage) (any, error) {
+func (s serverBackupActions) importInspect(ctx context.Context, raw json.RawMessage) (any, error) {
 	params, err := decodeWebParams[importInspectParams](raw)
 	if err != nil {
 		return nil, err
@@ -140,7 +140,7 @@ func (s serverBackupActions) importInspect(_ context.Context, raw json.RawMessag
 	}
 	defer file.Close()
 
-	inspection, err := files.ReadForeignBackup(file)
+	inspection, err := files.ReadForeignBackup(ctx, file)
 	if err != nil {
 		return nil, fileError(err)
 	}
