@@ -251,7 +251,8 @@ func (a accountActions) addUser(ctx context.Context, name string) (sysuser.User,
 // suspend locks the account's password, takes away its login shell, ends
 // its SSH sessions and removes its jail (the panel enables SSH again when it
 // unsuspends the account), shows a "temporarily unavailable" page on all
-// its websites and stops its PHP.
+// its websites, stops its PHP, and kills whatever it still has running so a
+// suspended account stops using the server.
 func (a accountActions) suspend(ctx context.Context, raw json.RawMessage) (any, error) {
 	user, err := a.existingAccount(ctx, raw)
 	if err != nil {
@@ -272,6 +273,13 @@ func (a accountActions) suspend(ctx context.Context, raw json.RawMessage) (any, 
 
 	if err := a.web.SuspendAccount(ctx, user.Name); err != nil {
 		return nil, webError(err, "account "+user.Name)
+	}
+
+	// The pools are stopped now, so nothing respawns: kill what is left, such
+	// as a CGI script, a leftover shell, a cron job or a daemon the account
+	// started, so it cannot keep running while suspended.
+	if err := a.system.KillProcesses(ctx, user.UID); err != nil {
+		return nil, systemError(err)
 	}
 
 	if err := a.databases.LockAccount(ctx, user.Name, true); err != nil {

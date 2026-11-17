@@ -219,7 +219,7 @@ func TestSuspendLocksTheAccount(t *testing.T) {
 		t.Fatalf("unexpected result %s", result)
 	}
 
-	assertCalls(t, system, "lookup budi", "lock budi", "shell budi /usr/sbin/nologin", "web suspend budi", "db lock budi")
+	assertCalls(t, system, "lookup budi", "lock budi", "shell budi /usr/sbin/nologin", "web suspend budi", "kill 1001", "db lock budi")
 }
 
 func TestUnsuspendUnlocksTheAccount(t *testing.T) {

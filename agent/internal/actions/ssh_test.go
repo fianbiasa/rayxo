@@ -172,7 +172,7 @@ func TestSuspendingAndDeletingEndTheSSHSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertCalls(t, system, "lookup budi", "lock budi", "shell budi /usr/sbin/nologin", "unjail budi", "web suspend budi", "db lock budi")
+	assertCalls(t, system, "lookup budi", "lock budi", "shell budi /usr/sbin/nologin", "unjail budi", "web suspend budi", "kill 1001", "db lock budi")
 
 	system.calls = nil
 	system.jails["budi"] = jail.Account{Name: "budi"}
