@@ -268,8 +268,14 @@ func (r remoteActions) download(ctx context.Context, raw json.RawMessage) (any, 
 		return nil, rpc.Errorf(rpc.CodeActionFailed, "backup %s is on the server already", params.Name)
 	}
 
-	if err := os.Rename(part, local); err != nil {
+	// renameNoReplace, not os.Rename, so a backup of the same name made between
+	// the check above and here is not silently overwritten.
+	if err := renameNoReplace(part, local); err != nil {
 		_ = os.Remove(part)
+
+		if errors.Is(err, os.ErrExist) {
+			return nil, rpc.Errorf(rpc.CodeActionFailed, "backup %s is on the server already", params.Name)
+		}
 
 		return nil, fmt.Errorf("move backup %s into place: %w", params.Name, err)
 	}

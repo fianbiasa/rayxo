@@ -197,7 +197,13 @@ func (s serverBackupActions) importUpload(_ context.Context, raw json.RawMessage
 		return nil, fileError(err)
 	}
 
-	if err := os.Rename(s.transfers.UploadPath(params.Transfer), path); err != nil {
+	// renameNoReplace, not os.Rename, so a backup of the same name made between
+	// the check above and here is not silently overwritten.
+	if err := renameNoReplace(s.transfers.UploadPath(params.Transfer), path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil, rpc.Errorf(rpc.CodeActionFailed, "backup %s already exists", params.Name)
+		}
+
 		return nil, fmt.Errorf("move backup %s into place: %w", params.Name, err)
 	}
 
