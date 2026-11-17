@@ -150,6 +150,9 @@ func Register(registry *rpc.Registry, config Config) {
 	files := sysfiles.DefaultConfig()
 	files.PHPVersions = web.PHPVersions
 	files.Run = runner.Run
+	// Share the web server's lock so editing a custom Nginx or Apache file and
+	// applying a website never test or reload the server at the same moment.
+	files.Lock = web.ConfigLock()
 
 	for name, method := range configFileMethods(sysfiles.New(files)) {
 		registry.Register(name, method)

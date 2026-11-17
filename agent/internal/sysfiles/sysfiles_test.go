@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -224,6 +225,17 @@ func TestPHPAdditionsRestartThePoolsOfTheirVersion(t *testing.T) {
 
 	if strings.Join(run.calls, ",") != "systemctl try-restart rayxo-php84@*.service" {
 		t.Errorf("calls = %q", run.calls)
+	}
+}
+
+func TestNewUsesTheSharedLockWhenGiven(t *testing.T) {
+	shared := &sync.Mutex{}
+	if m := New(Config{Lock: shared}); m.mu != shared {
+		t.Error("a manager given a lock did not use it, so it cannot serialize with the web server")
+	}
+
+	if New(Config{}).mu == nil {
+		t.Error("a manager without a given lock has none of its own")
 	}
 }
 

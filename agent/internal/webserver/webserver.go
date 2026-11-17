@@ -263,6 +263,14 @@ func New(cfg Config) *Manager {
 	return &Manager{cfg: cfg}
 }
 
+// ConfigLock is the lock this manager holds while it tests and reloads Nginx
+// or Apache. The config-file editor shares it so editing a custom Nginx or
+// Apache file never tests or reloads the server at the same moment a website's
+// vhost is being applied.
+func (m *Manager) ConfigLock() *sync.Mutex {
+	return &m.mu
+}
+
 // Site is one domain of an account, served with one PHP version.
 type Site struct {
 	User       string

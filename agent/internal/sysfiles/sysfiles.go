@@ -95,6 +95,10 @@ type Config struct {
 	PHPVersions func() ([]string, error)
 	Run         func(ctx context.Context, program string, args ...string) ([]byte, error)
 	Now         func() time.Time
+	// Lock, when set, is shared with the web server so editing a custom Nginx
+	// or Apache file and applying a website's vhost — both of which test and
+	// reload the same server — never run at once. New makes its own when nil.
+	Lock *sync.Mutex
 }
 
 // DefaultConfig returns the locations on a server.
@@ -113,12 +117,18 @@ func DefaultConfig() Config {
 // Manager reads and changes the editable files, one change at a time.
 type Manager struct {
 	cfg Config
-	mu  sync.Mutex
+	mu  *sync.Mutex
 }
 
-// New returns a Manager for cfg.
+// New returns a Manager for cfg. It uses cfg.Lock when set (shared with the
+// web server), else a lock of its own.
 func New(cfg Config) *Manager {
-	return &Manager{cfg: cfg}
+	lock := cfg.Lock
+	if lock == nil {
+		lock = &sync.Mutex{}
+	}
+
+	return &Manager{cfg: cfg, mu: lock}
 }
 
 var phpVersionPattern = regexp.MustCompile(`^[0-9]\.[0-9]$`)
