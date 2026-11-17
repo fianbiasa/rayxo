@@ -815,6 +815,17 @@ create_layout() {
     fi
     usermod -aG rayxo-access www-data
 
+    # Nginx runs as its own user, so only it — not the customer Apache, which
+    # runs as www-data — can reach the panel, phpMyAdmin and webmail PHP-FPM
+    # sockets (group rayxo-nginx). It joins rayxo-access to serve static files
+    # from the 0710 homes, and www-data to read the 0640 htpasswd files of
+    # protected folders that both front ends check.
+    if ! id -u rayxo-nginx >/dev/null 2>&1; then
+        useradd --system --user-group --no-create-home --shell /usr/sbin/nologin rayxo-nginx
+        info "User sistem rayxo-nginx dibuat"
+    fi
+    usermod -aG rayxo-access,www-data rayxo-nginx
+
     install -d -m 0755 -o root -g root "$INSTALL_DIR" "$INSTALL_DIR/releases"
     install -d -m 0750 -o root -g "$PANEL_USER" "$CONFIG_DIR"
     install -d -m 0700 -o root -g root "$CONFIG_DIR/ssl"
@@ -1883,6 +1894,13 @@ configure_php_fpm() {
 configure_nginx() {
     step "Mengatur Nginx untuk panel (port $PANEL_PORT)"
 
+    # Nginx workers run as rayxo-nginx (create_layout), so the customer Apache
+    # (www-data) cannot reach the panel/phpMyAdmin/webmail sockets, which are
+    # owned by rayxo-nginx. The "user" directive is main context, so it lives in
+    # nginx.conf; switching it needs a restart, not a reload, below.
+    sed -i -E 's/^[[:space:]]*user[[:space:]]+[^;]+;/user rayxo-nginx;/' /etc/nginx/nginx.conf
+    chown -R rayxo-nginx:rayxo-nginx /var/lib/nginx
+
     local site=/etc/nginx/sites-available/rayxo.conf
     # The panel itself, also included by the sites of resellers' sign-in
     # domains that rayxod writes.
@@ -1905,7 +1923,13 @@ configure_nginx() {
     rm -f "$PANEL_PORT_TRIAL_SITE"
 
     quietly nginx -t
-    systemctl reload nginx
+    # A restart switches the workers to rayxo-nginx the first time; after that a
+    # reload is enough and keeps the panel serving during updates.
+    if pgrep -u rayxo-nginx -x nginx >/dev/null 2>&1; then
+        systemctl reload nginx
+    else
+        systemctl restart nginx
+    fi
     printf '%s\n' "$PANEL_PORT" >"$PANEL_PORT_FILE"
     rm -f "$PANEL_PORT_TRIAL_STATE"
     info "Panel dilayani di port $PANEL_PORT"

@@ -271,5 +271,22 @@ step "Site PHP has the SQLite driver"
 as_root php8.4 -m 2>/dev/null | grep -qx pdo_sqlite ||
     die "pdo_sqlite is not loaded in PHP 8.4 (php8.4-sqlite3 missing)"
 
+# Nginx runs as its own user so the customer Apache (www-data) cannot reach the
+# panel, phpMyAdmin and webmail PHP-FPM sockets (group rayxo-nginx).
+step "Web front end is isolated (Nginx user, panel sockets out of Apache's reach)"
+as_root bash -c '
+set -e
+nginx_user=$(ps -o user= -C nginx | grep -v "^root" | sort -u | head -n1)
+[ "$nginx_user" = rayxo-nginx ] || { echo "Nginx workers run as ${nginx_user:-?}, not rayxo-nginx"; exit 1; }
+apache_user=$(ps -o user= -C apache2 | grep -v "^root" | sort -u | head -n1)
+[ "$apache_user" = www-data ] || { echo "Apache runs as ${apache_user:-?}, not www-data"; exit 1; }
+for s in /run/php/rayxo.sock /run/php/rayxo-phpmyadmin.sock /run/php/rayxo-webmail.sock; do
+    grp=$(stat -c %G "$s")
+    [ "$grp" = rayxo-nginx ] || { echo "$s group is $grp, not rayxo-nginx"; exit 1; }
+    if runuser -u www-data -- test -w "$s"; then echo "www-data can reach $s"; exit 1; fi
+done
+echo "    Nginx=rayxo-nginx, Apache=www-data; panel sockets group rayxo-nginx"
+' || die "the web front end is not isolated as expected"
+
 passed=1
 step "Passed: a clean install works end to end"
