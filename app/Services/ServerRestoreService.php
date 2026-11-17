@@ -106,7 +106,13 @@ class ServerRestoreService
     {
         $note = __('Stopped: the panel was restored from a backup on another server.');
 
+        // The queued jobs, cache locks and login sessions in the restored
+        // database are the old server's: its jobs must not run here, a lock it
+        // left behind must not block new work, and its sessions must not sign
+        // anyone in on this server.
         DB::table('jobs')->delete();
+        DB::table('cache_locks')->delete();
+        DB::table('sessions')->delete();
 
         Task::query()->whereIn('status', [TaskStatus::Queued, TaskStatus::Running])
             ->update(['status' => TaskStatus::Failed, 'error' => $note, 'finished_at' => now()]);

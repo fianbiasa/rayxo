@@ -176,6 +176,8 @@ class SystemBackupTest extends TestCase
         $stale = Task::create(['user_id' => $active->id, 'action' => 'web.apply_domain', 'payload' => [], 'status' => TaskStatus::Queued]);
         $running = ServerBackup::factory()->for($active, 'account')->create(['status' => ServerBackupStatus::Running]);
         DB::table('jobs')->insert(['queue' => 'default', 'payload' => '{}', 'attempts' => 0, 'available_at' => 0, 'created_at' => 0]);
+        DB::table('cache_locks')->insert(['key' => 'old-lock', 'owner' => 'old', 'expiration' => now()->addHour()->timestamp]);
+        DB::table('sessions')->insert(['id' => 'old-session', 'payload' => 'x', 'last_activity' => now()->timestamp]);
         $itself = SystemBackup::factory()->create(['status' => ServerBackupStatus::Running]);
         $other = SystemBackup::factory()->create(['status' => ServerBackupStatus::Queued]);
         // The old server's backups: one with a copy on the remote destination,
@@ -198,6 +200,8 @@ class SystemBackupTest extends TestCase
         $this->assertSame(TaskStatus::Failed, $stale->fresh()->status);
         $this->assertSame(ServerBackupStatus::Failed, $running->fresh()->status);
         $this->assertSame(0, DB::table('jobs')->count());
+        $this->assertSame(0, DB::table('cache_locks')->count());
+        $this->assertSame(0, DB::table('sessions')->count());
 
         $queued = Task::query()->where('status', TaskStatus::Queued)->orderBy('id')->get();
         $actions = $queued->map(fn (Task $task): string => $task->action.' '.($task->payload['username'] ?? ''))->all();
