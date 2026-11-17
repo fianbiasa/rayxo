@@ -98,6 +98,13 @@ func (m *Manager) ApplyLoginDomain(ctx context.Context, domain string) (LoginDom
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Check again under the lock: a website with this name (or its www./bare
+	// sibling) may have been added during the certificate step above, which
+	// holds this same lock while it writes a vhost.
+	if err := m.checkLoginDomain(domain); err != nil {
+		return LoginDomain{}, err
+	}
+
 	if err := ensureDir(m.cfg.SitesDir, 0o755); err != nil {
 		return LoginDomain{}, err
 	}
@@ -127,8 +134,20 @@ func (m *Manager) RemoveLoginDomain(ctx context.Context, domain string) error {
 	return m.deleteCertificate(ctx, loginLineage(domain))
 }
 
+// wwwSibling is the other name of a domain's bare/www pair: www.<domain> for a
+// bare name, the bare name for a www.<domain>.
+func wwwSibling(domain string) string {
+	if bare, ok := strings.CutPrefix(domain, "www."); ok {
+		return bare
+	}
+
+	return "www." + domain
+}
+
 // checkLoginDomain refuses a name that is not a domain, the server's
-// hostname or one of its names, or a website's domain.
+// hostname or one of its names, or a website's domain. A website answers on
+// both its bare name and www.<name>, so a login domain on either name of that
+// pair is refused too, not just the exact name.
 func (m *Manager) checkLoginDomain(domain string) error {
 	if err := validate.Domain(domain); err != nil {
 		return err
@@ -140,13 +159,15 @@ func (m *Manager) checkLoginDomain(domain string) error {
 		}
 	}
 
-	website, err := m.hasVhost(domain)
-	if err != nil {
-		return err
-	}
+	for _, name := range []string{domain, wwwSibling(domain)} {
+		website, err := m.hasVhost(name)
+		if err != nil {
+			return err
+		}
 
-	if website {
-		return fmt.Errorf("%w: %s is a website", ErrDomainTaken, domain)
+		if website {
+			return fmt.Errorf("%w: %s is a website", ErrDomainTaken, domain)
+		}
 	}
 
 	return nil

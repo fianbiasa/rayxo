@@ -84,7 +84,9 @@ func TestTheServerNameAndWebsitesCannotBeLoginDomains(t *testing.T) {
 	e.mustApply(budiSite)
 	e.runner.reset()
 
-	for _, domain := range []string{"server1.example.net", "panel.server1.example.net", "example.com"} {
+	// example.com is a website; www.example.com is the other name it answers
+	// on, so neither name of the pair may be a login domain.
+	for _, domain := range []string{"server1.example.net", "panel.server1.example.net", "example.com", "www.example.com"} {
 		if _, err := e.manager.ApplyLoginDomain(context.Background(), domain); !errors.Is(err, ErrDomainTaken) {
 			t.Errorf("ApplyLoginDomain(%s) = %v, want ErrDomainTaken", domain, err)
 		}
