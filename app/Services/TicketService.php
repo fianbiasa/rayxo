@@ -31,6 +31,14 @@ class TicketService
      */
     public const ATTACHMENT_DIRECTORY = 'tickets';
 
+    /**
+     * The total size of attachments one account's tickets may hold, and the
+     * free disk space to keep on the panel server, so tickets cannot fill it.
+     */
+    public const MAX_ATTACHMENTS_BYTES_PER_USER = 200 * 1024 * 1024;
+
+    public const ATTACHMENT_DISK_RESERVE = 1024 * 1024 * 1024;
+
     public function __construct(
         private AuditLogger $audit,
         private NotificationService $notifications,
@@ -130,10 +138,45 @@ class TicketService
     }
 
     /**
+     * Refuse new attachments when the account's tickets already hold too much,
+     * or the panel server is low on disk, so tickets cannot fill it.
+     *
+     * @param  list<UploadedFile>  $files
+     */
+    private function ensureAttachmentRoom(Ticket $ticket, array $files): void
+    {
+        $incoming = 0;
+        foreach ($files as $file) {
+            $incoming += (int) $file->getSize();
+        }
+
+        $used = (int) TicketAttachment::query()
+            ->whereIn('ticket_id', Ticket::query()->where('user_id', $ticket->user_id)->select('id'))
+            ->sum('size');
+
+        if ($used + $incoming > self::MAX_ATTACHMENTS_BYTES_PER_USER) {
+            throw ValidationException::withMessages([
+                'attachments' => __('The attachments on your tickets are at their limit; remove some before adding more.'),
+            ]);
+        }
+
+        $free = @disk_free_space(Storage::disk('local')->path(''));
+        if ($free !== false && $free - $incoming < self::ATTACHMENT_DISK_RESERVE) {
+            throw ValidationException::withMessages([
+                'attachments' => __('The server is low on disk space; please try again later.'),
+            ]);
+        }
+    }
+
+    /**
      * @param  list<UploadedFile>  $files
      */
     private function addMessage(Ticket $ticket, User $author, string $body, array $files = []): TicketMessage
     {
+        if ($files !== []) {
+            $this->ensureAttachmentRoom($ticket, $files);
+        }
+
         $message = new TicketMessage(['body' => $body]);
         $message->forceFill(['ticket_id' => $ticket->id, 'author_id' => $author->id])->save();
 

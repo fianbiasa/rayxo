@@ -6,7 +6,9 @@ use App\Jobs\DeliverAlert;
 use App\Models\NotificationChannel;
 use App\Models\Ticket;
 use App\Models\TicketAttachment;
+use App\Models\TicketMessage;
 use App\Models\User;
+use App\Services\TicketService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
@@ -32,6 +34,31 @@ class TicketAttachmentTest extends TestCase
         $this->reseller = User::factory()->reseller()->create(['username' => 'jual']);
         $this->account = User::factory()->create(['username' => 'budi', 'owner_id' => $this->reseller->id]);
         NotificationChannel::factory()->for($this->reseller)->create(['events' => ['ticket']]);
+    }
+
+    public function test_an_account_cannot_fill_the_disk_with_ticket_attachments()
+    {
+        // An earlier ticket of this account already holds the whole allowance.
+        $ticket = Ticket::factory()->create(['user_id' => $this->account->id, 'reseller_id' => $this->reseller->id]);
+        $message = TicketMessage::factory()->create(['ticket_id' => $ticket->id, 'author_id' => $this->account->id]);
+        TicketAttachment::factory()->create([
+            'ticket_id' => $ticket->id,
+            'ticket_message_id' => $message->id,
+            'size' => TicketService::MAX_ATTACHMENTS_BYTES_PER_USER,
+        ]);
+
+        // One more attachment, however small, is refused and not stored.
+        $this->actingAs($this->account)
+            ->post(route('tickets.store'), [
+                'subject' => 'One more',
+                'priority' => 'low',
+                'body' => 'Please see the file.',
+                'attachments' => [UploadedFile::fake()->image('tiny.png', 10, 10)],
+            ])
+            ->assertSessionHasErrors('attachments');
+
+        $this->assertSame(1, TicketAttachment::query()->count());
+        $this->assertSame(0, Ticket::query()->where('subject', 'One more')->count());
     }
 
     public function test_messages_carry_files_that_only_the_two_sides_of_the_ticket_open()
