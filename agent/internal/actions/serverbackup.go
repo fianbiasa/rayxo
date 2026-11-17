@@ -756,7 +756,10 @@ func (s serverBackupActions) ensureDir() error {
 
 // open opens backup name for reading. It never follows a link.
 func (s serverBackupActions) open(name string) (*os.File, error) {
-	file, err := os.OpenFile(filepath.Join(s.config.Dir, name), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	// O_NONBLOCK so opening never waits on a writer should the path be a FIFO
+	// rather than a backup file; O_NONBLOCK does not affect reading a regular
+	// file.
+	file, err := os.OpenFile(filepath.Join(s.config.Dir, name), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, &rpc.Error{Code: rpc.CodeActionFailed, Message: "backup " + name + " does not exist", Data: map[string]string{"reason": files.ReasonNotFound}}
 	}

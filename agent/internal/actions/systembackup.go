@@ -290,7 +290,10 @@ func (s systemBackupActions) download(_ context.Context, raw json.RawMessage) (a
 		return nil, err
 	}
 
-	source, err := os.OpenFile(filepath.Join(s.config.SystemDir, params.Name), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	// O_NONBLOCK so opening never waits on a writer should the path be a FIFO
+	// rather than a backup file; O_NONBLOCK does not affect reading a regular
+	// file.
+	source, err := os.OpenFile(filepath.Join(s.config.SystemDir, params.Name), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, &rpc.Error{Code: rpc.CodeActionFailed, Message: "backup " + params.Name + " does not exist", Data: map[string]string{"reason": files.ReasonNotFound}}
 	}
