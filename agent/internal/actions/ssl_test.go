@@ -424,7 +424,7 @@ func wildcardOf(domain string) map[string]any {
 	return map[string]any{"username": "budi", "domain": domain, "wildcard": true, "nameservers": []string{"ns1.example.net", "ns2.example.net"}}
 }
 
-func TestWildcardCertificateNeedsThisServersNameservers(t *testing.T) {
+func TestWildcardCertificateUsesDns01WhenDelegated(t *testing.T) {
 	env := newWebEnv(t)
 	env.mustCall("web.apply_domain", applyParams("example.com", "8.4"))
 
@@ -434,15 +434,6 @@ func TestWildcardCertificateNeedsThisServersNameservers(t *testing.T) {
 		certbotArgs = args
 
 		return env.fakeCertbot(args)
-	}
-
-	env.nameservers["example.com"] = []string{"ns1.other.org", "ns2.other.org"}
-	env.assertMessage("ssl.issue", wildcardOf("example.com"),
-		"example.com uses nameservers ns1.other.org, ns2.other.org, not this server's; a wildcard certificate needs the domain to use "+
-			"this server's nameservers: change them at the domain's registrar, wait until they are in use, then try again")
-
-	if env.countPrograms("certbot certonly") != 0 {
-		t.Fatal("certbot ran for a domain that is not on this server's nameservers")
 	}
 
 	env.nameservers["example.com"] = []string{"ns2.example.net"}
@@ -460,6 +451,51 @@ func TestWildcardCertificateNeedsThisServersNameservers(t *testing.T) {
 	}
 	if !slices.Equal(certbotArgs, want) {
 		t.Fatalf("certbot args = %q", certbotArgs)
+	}
+}
+
+func TestWildcardFallsBackToAStandardCertificateOnForeignNameservers(t *testing.T) {
+	env := newWebEnv(t)
+	env.mustCall("web.apply_domain", applyParams("example.com", "8.4"))
+
+	var certbotArgs []string
+
+	env.certbot = func(args []string) ([]byte, error) {
+		certbotArgs = args
+
+		return env.fakeCertbot(args)
+	}
+
+	// The domain is on Cloudflare's nameservers, not this server's, so DNS-01
+	// is impossible; it does reach this server over HTTP.
+	env.nameservers["example.com"] = []string{"ns1.other.org", "ns2.other.org"}
+	env.reach("example.com")
+
+	result := env.mustCall("ssl.issue", wildcardOf("example.com"))
+	if !strings.Contains(result, `"names":["example.com"]`) || !strings.Contains(result, `"wildcard_fallback":true`) {
+		t.Fatalf("expected a standard-certificate fallback, got %s", result)
+	}
+
+	// It issued a standard HTTP-01 certificate through the webroot, never DNS-01.
+	if slices.Contains(certbotArgs, "--manual") || !slices.Contains(certbotArgs, "--webroot") {
+		t.Fatalf("expected a webroot (HTTP-01) certbot run, got %q", certbotArgs)
+	}
+}
+
+func TestWildcardFallbackStillNeedsTheDomainToReachThisServer(t *testing.T) {
+	env := newWebEnv(t)
+	env.mustCall("web.apply_domain", applyParams("example.com", "8.4"))
+
+	// Foreign nameservers and the domain does not reach this server either, so
+	// neither a wildcard nor the standard fallback can be issued.
+	env.nameservers["example.com"] = []string{"ns1.other.org"}
+
+	env.assertMessage("ssl.issue", wildcardOf("example.com"),
+		"example.com does not reach this server over HTTP (no DNS record); point its A record to this server, "+
+			"or proxy it through Cloudflare, then try again")
+
+	if env.countPrograms("certbot certonly") != 0 {
+		t.Fatal("certbot ran for an unreachable domain")
 	}
 }
 

@@ -63,14 +63,21 @@ func (p issueCertificateParams) validate() error {
 type certificateInfo struct {
 	Names     []string `json:"names"`
 	ExpiresAt string   `json:"expires_at"`
+	// WildcardFallback is true when a wildcard certificate was asked for but
+	// the domain does not use this server's nameservers, so a standard
+	// certificate (the domain and www) was issued instead.
+	WildcardFallback bool `json:"wildcard_fallback,omitempty"`
 }
 
 // issueCertificate implements ssl.issue: it gets a Let's Encrypt
 // certificate for a domain of the account, and for www.<domain> when that
 // reaches this server too; with wildcard, for the domain and *.<domain>
-// through DNS-01 instead. A valid certificate for the same names is kept,
-// so calling it again returns the same result. It does not turn HTTPS on;
-// web.apply_domain with ssl does.
+// through DNS-01 instead. A wildcard whose domain does not use this server's
+// nameservers cannot be issued through DNS-01 (e.g. a domain on Cloudflare's
+// nameservers), so a standard certificate is issued instead and the result
+// reports it (WildcardFallback). A valid certificate for the same names is
+// kept, so calling it again returns the same result. It does not turn HTTPS
+// on; web.apply_domain with ssl does.
 func (w webActions) issueCertificate(ctx context.Context, raw json.RawMessage) (any, error) {
 	params, err := decodeWebParams[issueCertificateParams](raw)
 	if err != nil {
@@ -82,22 +89,37 @@ func (w webActions) issueCertificate(ctx context.Context, raw json.RawMessage) (
 		return nil, err
 	}
 
-	issue := w.web.IssueCertificate
-	if params.Wildcard {
-		issue = func(ctx context.Context, user, domain string) (webserver.Certificate, error) {
-			return w.web.IssueWildcardCertificate(ctx, user, domain, params.Nameservers)
-		}
-	}
-
-	certificate, err := issue(ctx, user.Name, params.Domain)
+	certificate, fallback, err := w.issueFor(ctx, user.Name, params)
 	if err != nil {
 		return nil, webError(err, params.Domain)
 	}
 
 	return certificateInfo{
-		Names:     certificate.Names,
-		ExpiresAt: certificate.ExpiresAt.UTC().Format(time.RFC3339),
+		Names:            certificate.Names,
+		ExpiresAt:        certificate.ExpiresAt.UTC().Format(time.RFC3339),
+		WildcardFallback: fallback,
 	}, nil
+}
+
+// issueFor issues the certificate ssl.issue asks for. A wildcard request
+// whose domain does not use this server's nameservers (*NotDelegatedError)
+// cannot get a DNS-01 certificate, so it falls back to a standard HTTP-01
+// certificate for the domain and www; fallback reports that this happened.
+func (w webActions) issueFor(ctx context.Context, user string, params issueCertificateParams) (cert webserver.Certificate, fallback bool, err error) {
+	if !params.Wildcard {
+		cert, err = w.web.IssueCertificate(ctx, user, params.Domain)
+
+		return cert, false, err
+	}
+
+	cert, err = w.web.IssueWildcardCertificate(ctx, user, params.Domain, params.Nameservers)
+	if _, notDelegated := errors.AsType[*webserver.NotDelegatedError](err); notDelegated {
+		cert, err = w.web.IssueCertificate(ctx, user, params.Domain)
+
+		return cert, true, err
+	}
+
+	return cert, false, err
 }
 
 // maxExpiryDomains bounds the domains one ssl.expiry call reads.

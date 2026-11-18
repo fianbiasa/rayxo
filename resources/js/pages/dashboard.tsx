@@ -803,6 +803,7 @@ const activityIcons: Record<string, LucideIcon> = {
     'domain.created': Globe,
     'domain.deleted': Trash2,
     'domain.ssl_requested': Lock,
+    'domain.ssl_fell_back': Lock,
     'domain.ssl_removed': LockOpen,
     'domain.ssl_cancelled': LockOpen,
     'domain.https_forced': Lock,

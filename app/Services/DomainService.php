@@ -766,6 +766,16 @@ class DomainService
                 'ssl_error' => null,
             ])->save();
 
+            // A wildcard was asked for but the domain's DNS is not on this
+            // server, so a standard certificate was issued instead. Record it
+            // so the administrator can see why the certificate is not wildcard.
+            if (($output['wildcard_fallback'] ?? false) === true) {
+                $this->audit->record('domain.ssl_fell_back', $domain, [
+                    'domain' => $domain->name,
+                    'username' => $account->username,
+                ], $actor);
+            }
+
             if ($account->status !== AccountStatus::Deleting) {
                 $this->dispatchApply($domain, $account, $actor);
             }

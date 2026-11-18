@@ -9,6 +9,7 @@ use App\Enums\DomainStatus;
 use App\Enums\SslStatus;
 use App\Enums\TaskStatus;
 use App\Jobs\RunAgentTask;
+use App\Models\AuditLog;
 use App\Models\Domain;
 use App\Models\Task;
 use App\Models\User;
@@ -65,6 +66,26 @@ class ApplySslTaskResultTest extends TestCase
         $this->assertSame($admin->id, $apply->actor_id);
 
         Queue::assertPushed(RunAgentTask::class, fn (RunAgentTask $job) => $job->task->is($apply));
+    }
+
+    public function test_a_wildcard_that_fell_back_to_a_standard_certificate_is_recorded()
+    {
+        $account = User::factory()->create(['username' => 'budi']);
+        $domain = Domain::factory()->for($account, 'account')->create(['name' => 'example.com']);
+        $admin = User::factory()->admin()->create();
+
+        $this->app->make(DomainService::class)->requestSsl($domain, $admin);
+        $this->runTask($this->soleTask('ssl.issue'), [
+            'names' => ['example.com', 'www.example.com'],
+            'expires_at' => '2027-02-05T10:30:00Z',
+            'wildcard_fallback' => true,
+        ]);
+
+        $domain->refresh();
+
+        $this->assertSame(SslStatus::Active, $domain->ssl_status);
+        $this->assertFalse($domain->hasWildcardCertificate());
+        $this->assertDatabaseHas(AuditLog::class, ['action' => 'domain.ssl_fell_back', 'actor_id' => $admin->id]);
     }
 
     public function test_a_failed_certificate_request_keeps_the_agents_error()

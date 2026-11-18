@@ -25,6 +25,7 @@ export const auditActionLabels: Record<string, string> = {
     'domain.created': 'Domain ditambahkan',
     'domain.deleted': 'Domain dihapus',
     'domain.ssl_requested': 'SSL diminta',
+    'domain.ssl_fell_back': 'SSL wildcard dialihkan ke standar',
     'domain.ssl_removed': 'SSL dilepas',
     'domain.ssl_cancelled': 'Permintaan SSL dibatalkan',
     'domain.ssl_custom_installed': 'Sertifikat sendiri dipasang',
