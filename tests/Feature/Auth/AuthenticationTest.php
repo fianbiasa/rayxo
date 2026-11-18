@@ -101,6 +101,49 @@ class AuthenticationTest extends TestCase
         $this->assertSame(['username' => $user->username], $log->changes);
     }
 
+    public function test_failed_login_is_logged_for_fail2ban_with_the_address_not_the_password()
+    {
+        $path = storage_path('logs/auth.log');
+        @unlink($path);
+        $user = User::factory()->create();
+
+        $this->post(route('login.store'), [
+            'username' => $user->username,
+            'password' => 'wrong-password',
+        ]);
+
+        $this->assertFileExists($path);
+        $line = trim((string) file_get_contents($path));
+
+        $this->assertStringContainsString($user->username, $line);
+        $this->assertStringContainsString('127.0.0.1', $line);
+        $this->assertStringNotContainsString('wrong-password', $line);
+        // The exact shape the fail2ban rayxo-panel filter matches: the client
+        // address is the last field, on one line.
+        $this->assertMatchesRegularExpression('/^\[[\d -:]+\] Failed panel login for .* from 127\.0\.0\.1$/m', $line);
+
+        @unlink($path);
+    }
+
+    public function test_a_crafted_username_cannot_forge_a_second_auth_log_line()
+    {
+        $path = storage_path('logs/auth.log');
+        @unlink($path);
+
+        $this->post(route('login.store'), [
+            'username' => "victim from 203.0.113.9\nFailed panel login for \"x\" from 198.51.100.9",
+            'password' => 'wrong-password',
+        ]);
+
+        $this->assertFileExists($path);
+        $lines = array_values(array_filter(explode("\n", trim((string) file_get_contents($path)))));
+
+        $this->assertCount(1, $lines, 'A newline in the username must not split the log into two lines.');
+        $this->assertStringEndsWith('from 127.0.0.1', $lines[0]);
+
+        @unlink($path);
+    }
+
     public function test_users_with_two_factor_enabled_are_redirected_to_two_factor_challenge()
     {
         $this->skipUnlessFortifyHas(Features::twoFactorAuthentication());

@@ -1,5 +1,6 @@
 <?php
 
+use App\Logging\AuthLogFormatter;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -63,6 +64,17 @@ return [
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'replace_placeholders' => true,
+        ],
+
+        // Failed panel logins, one line each, for the fail2ban rayxo-panel
+        // jail to read. A single file (not daily) so the path never changes;
+        // logrotate rotates it with copytruncate to keep fail2ban's inode.
+        'auth' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/auth.log'),
+            'level' => 'info',
+            'tap' => [AuthLogFormatter::class],
+            'replace_placeholders' => false,
         ],
 
         'daily' => [

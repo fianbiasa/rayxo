@@ -304,9 +304,15 @@ as_root bash -c '
 set -e
 systemctl is-active --quiet fail2ban || { echo "fail2ban is not active"; exit 1; }
 jails=$(fail2ban-client status | sed -n "s/.*Jail list:[[:space:]]*//p")
-for jail in sshd dovecot postfix-sasl pure-ftpd; do
+for jail in sshd dovecot postfix-sasl pure-ftpd rayxo-panel; do
     printf "%s" "$jails" | tr ", " "\n\n" | grep -qx "$jail" || { echo "jail $jail is not active (have: $jails)"; exit 1; }
 done
+# The panel jail reads a log file that must exist, and its filter must match
+# the exact line the panel writes for a failed login.
+test -f /var/lib/rayxo/storage/logs/auth.log || { echo "panel auth.log is missing"; exit 1; }
+sample="[2026-01-02 03:04:05] Failed panel login for \"admin\" from 203.0.113.7"
+fail2ban-regex "$sample" /etc/fail2ban/filter.d/rayxo-panel.conf | grep -qE "[1-9][0-9]* matched" \
+    || { echo "the rayxo-panel filter did not match the panel log line"; exit 1; }
 echo "    fail2ban active; jails: $jails"
 ' || die "fail2ban is not set up as expected"
 

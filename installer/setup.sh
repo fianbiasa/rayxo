@@ -2222,9 +2222,38 @@ enabled = true
 enabled = true
 F2B
 
+    # The panel's own failed-login jail reads a log file, not the journal, so
+    # it needs $DATA_DIR; append it with the variable expanded.
+    cat >>/etc/fail2ban/jail.local <<F2B_PANEL
+
+[rayxo-panel]
+enabled = true
+backend = auto
+filter = rayxo-panel
+logpath = $DATA_DIR/storage/logs/auth.log
+# A confirmed panel brute-forcer is blocked on every port.
+banaction = %(banaction_allports)s
+F2B_PANEL
+
+    # The filter that reads the panel's auth.log. The address is the last
+    # field on the line, so a crafted username can never stand in for it.
+    cat >/etc/fail2ban/filter.d/rayxo-panel.conf <<'F2B_FILTER'
+# Managed by rayxo setup.sh; changes are overwritten.
+[Definition]
+failregex = ^.*Failed panel login for .* from <HOST>\s*$
+datepattern = ^\[%%Y-%%m-%%d %%H:%%M:%%S\]
+ignoreregex =
+F2B_FILTER
+
+    # fail2ban refuses to start a jail whose log file is missing, so make sure
+    # it exists before the service starts; never truncate one that is there.
+    if [[ ! -e "$DATA_DIR/storage/logs/auth.log" ]]; then
+        install -o "$PANEL_USER" -g "$PANEL_USER" -m 0640 /dev/null "$DATA_DIR/storage/logs/auth.log"
+    fi
+
     quietly systemctl enable fail2ban
     systemctl restart fail2ban
-    info "fail2ban aktif (SSH, FTP, IMAP/POP3, SMTP)"
+    info "fail2ban aktif (SSH, FTP, IMAP/POP3, SMTP, login panel)"
 }
 
 # DNS for the zones of hosting accounts. PowerDNS Authoritative serves them
