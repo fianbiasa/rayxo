@@ -197,6 +197,7 @@ class BandwidthService
     {
         $web = $this->entries($report['web'] ?? null, 'domain', lowercase: true);
         $mail = $this->entries($report['mail'] ?? null, 'domain', lowercase: true);
+        $mailUser = $this->entries($report['mail_user'] ?? null, 'user', lowercase: false);
         $ftp = $this->entries($report['ftp'] ?? null, 'user', lowercase: false);
 
         $domains = Domain::query()
@@ -206,6 +207,10 @@ class BandwidthService
         $logins = FtpAccount::query()
             ->whereIn('login', array_unique(array_column($ftp, 'name')))
             ->pluck('user_id', 'login');
+        $accountIds = User::query()
+            ->where('role', Role::User)
+            ->whereIn('username', array_unique(array_column($mailUser, 'name')))
+            ->pluck('id', 'username');
 
         /** @var array<int, array<string, array{web_bytes: int, mail_bytes: int, ftp_bytes: int}>> $accounts */
         $accounts = [];
@@ -237,6 +242,22 @@ class BandwidthService
 
             $accounts[$userId][$entry['date']] ??= ['web_bytes' => 0, 'mail_bytes' => 0, 'ftp_bytes' => 0];
             $accounts[$userId][$entry['date']]['ftp_bytes'] += $entry['bytes'];
+            $added += $entry['bytes'];
+        }
+
+        // Mail submitted locally (PHP mail(), cron) is charged to the Unix
+        // account that sent it, since its envelope sender is forgeable. The
+        // account's username is its Unix login; there is no domain to also
+        // credit, so unlike $mail these bytes touch no website's total.
+        foreach ($mailUser as $entry) {
+            $userId = $accountIds->get($entry['name']);
+
+            if ($userId === null) {
+                continue;
+            }
+
+            $accounts[$userId][$entry['date']] ??= ['web_bytes' => 0, 'mail_bytes' => 0, 'ftp_bytes' => 0];
+            $accounts[$userId][$entry['date']]['mail_bytes'] += $entry['bytes'];
             $added += $entry['bytes'];
         }
 

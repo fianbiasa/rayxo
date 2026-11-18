@@ -49,6 +49,12 @@ class CollectBandwidthCommandTest extends TestCase
                 ['domain' => 'unknown.org', 'date' => '2026-11-12', 'bytes' => 999],
             ],
             'mail' => [['domain' => 'example.com', 'date' => '2026-11-12', 'bytes' => 30]],
+            // Locally submitted mail is charged to the account by its Unix
+            // username; an unknown login is left out, like a stray domain.
+            'mail_user' => [
+                ['user' => $account->username, 'date' => '2026-11-12', 'bytes' => 50],
+                ['user' => 'nobody', 'date' => '2026-11-12', 'bytes' => 999],
+            ],
             'ftp' => [
                 ['user' => $ftp->login, 'date' => '2026-11-12', 'bytes' => 4],
                 ['user' => 'stranger', 'date' => '2026-11-12', 'bytes' => 999],
@@ -60,11 +66,13 @@ class CollectBandwidthCommandTest extends TestCase
         $this->artisan('rayxo:collect-bandwidth')->assertSuccessful();
 
         $this->assertDatabaseHas('bandwidth_usages', ['user_id' => $account->id, 'date' => '2026-11-11', 'web_bytes' => 100, 'mail_bytes' => 0, 'ftp_bytes' => 0]);
-        $this->assertDatabaseHas('bandwidth_usages', ['user_id' => $account->id, 'date' => '2026-11-12', 'web_bytes' => 205, 'mail_bytes' => 30, 'ftp_bytes' => 4]);
+        // mail_bytes is the 30 from the domain plus the 50 from the login.
+        $this->assertDatabaseHas('bandwidth_usages', ['user_id' => $account->id, 'date' => '2026-11-12', 'web_bytes' => 205, 'mail_bytes' => 80, 'ftp_bytes' => 4]);
         $this->assertDatabaseCount('bandwidth_usages', 2);
+        // The per-login mail has no domain, so the website total is unchanged.
         $this->assertDatabaseHas('domain_bandwidths', ['domain_id' => $domain->id, 'date' => '2026-11-12', 'bytes' => 230]);
         $this->assertSame(self::CURSOR, Setting::query()->where('key', BandwidthService::CURSOR_SETTING)->value('value'));
-        $this->assertSame(339, BandwidthService::monthBytes($account));
+        $this->assertSame(389, BandwidthService::monthBytes($account));
     }
 
     public function test_the_next_count_starts_from_the_kept_cursor_and_goes_on_while_logs_are_left()
