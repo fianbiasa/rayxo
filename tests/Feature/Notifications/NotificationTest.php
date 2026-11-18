@@ -7,6 +7,7 @@ use App\Enums\SslStatus;
 use App\Enums\TaskStatus;
 use App\Events\AgentTaskFinished;
 use App\Jobs\DeliverAlert;
+use App\Jobs\SendVerificationCode;
 use App\Models\Domain;
 use App\Models\NotificationChannel;
 use App\Models\Package;
@@ -119,6 +120,111 @@ class NotificationTest extends TestCase
 
         $response->assertSessionHasErrors(['token' => 'Telegram did not accept the token: Telegram could not be reached.']);
         $this->assertStringNotContainsString(self::TOKEN, json_encode(session('errors')->all()));
+    }
+
+    public function test_setting_a_target_leaves_it_unverified_and_sends_it_a_code()
+    {
+        $this->actingAs($this->account)
+            ->put(route('notifications.update', 'email'), ['target' => 'budi@example.com', 'events' => ['ssl_failed'], 'enabled' => true])
+            ->assertSessionHasNoErrors();
+
+        $channel = NotificationChannel::query()->sole();
+
+        $this->assertNull($channel->verified_at);
+        Queue::assertPushed(SendVerificationCode::class, fn (SendVerificationCode $job): bool => $job->channelId === $channel->id);
+    }
+
+    public function test_changing_the_target_unverifies_it_while_other_changes_keep_it_verified()
+    {
+        $channel = NotificationChannel::factory()->for($this->account)->create(['target' => 'old@example.com', 'events' => ['ssl_failed']]);
+
+        // Only the events change: the target stays verified and gets no new code.
+        $this->actingAs($this->account)
+            ->put(route('notifications.update', 'email'), ['target' => 'old@example.com', 'events' => ['ticket'], 'enabled' => true])
+            ->assertSessionHasNoErrors();
+
+        $this->assertNotNull($channel->fresh()->verified_at);
+        Queue::assertNotPushed(SendVerificationCode::class);
+
+        // The target changes: it must prove itself again.
+        $this->actingAs($this->account)
+            ->put(route('notifications.update', 'email'), ['target' => 'new@example.com', 'events' => ['ticket'], 'enabled' => true])
+            ->assertSessionHasNoErrors();
+
+        $this->assertNull($channel->fresh()->verified_at);
+        Queue::assertPushed(SendVerificationCode::class, fn (SendVerificationCode $job): bool => $job->channelId === $channel->id);
+    }
+
+    public function test_the_code_sent_to_the_target_verifies_it_and_cannot_be_used_twice()
+    {
+        $this->actingAs($this->account)
+            ->put(route('notifications.update', 'email'), ['target' => 'budi@example.com', 'events' => ['ssl_failed'], 'enabled' => true]);
+
+        $channel = NotificationChannel::query()->sole();
+        $code = $this->sentCode($channel);
+
+        // A wrong code is refused with a clear message and leaves it unverified.
+        $this->actingAs($this->account)
+            ->post(route('notifications.verify', 'email'), ['code' => $this->otherCode($code)])
+            ->assertSessionHasErrors(['code' => 'This code is wrong or has expired. Ask for a new one.']);
+        $this->assertNull($channel->fresh()->verified_at);
+
+        // The real code verifies the target.
+        $this->actingAs($this->account)
+            ->post(route('notifications.verify', 'email'), ['code' => $code])
+            ->assertSessionHasNoErrors();
+        $this->assertNotNull($channel->fresh()->verified_at);
+
+        // The code is single use: it no longer works.
+        $this->actingAs($this->account)
+            ->post(route('notifications.verify', 'email'), ['code' => $code])
+            ->assertSessionHasErrors('code');
+    }
+
+    public function test_an_expired_code_is_refused()
+    {
+        $this->freezeTime();
+
+        $this->actingAs($this->account)
+            ->put(route('notifications.update', 'email'), ['target' => 'budi@example.com', 'events' => ['ssl_failed'], 'enabled' => true]);
+
+        $channel = NotificationChannel::query()->sole();
+        $code = $this->sentCode($channel);
+
+        $this->travel(NotificationService::CHALLENGE_MINUTES + 1)->minutes();
+
+        $this->actingAs($this->account)
+            ->post(route('notifications.verify', 'email'), ['code' => $code])
+            ->assertSessionHasErrors('code');
+        $this->assertNull($channel->fresh()->verified_at);
+    }
+
+    public function test_an_alert_skips_an_unverified_target_and_reaches_a_verified_one()
+    {
+        $verified = NotificationChannel::factory()->for($this->account)->create(['events' => ['ssl_failed']]);
+        $unverified = NotificationChannel::factory()->for($this->reseller)->unverified()->create(['events' => ['ssl_failed']]);
+
+        $count = app(NotificationService::class)->aboutAccount($this->account, NotificationEvents::SSL_FAILED, 'SSL', 'Body', 'verify:alert');
+
+        $this->assertSame(1, $count);
+        Queue::assertPushed(DeliverAlert::class, fn (DeliverAlert $job): bool => $job->channelId === $verified->id);
+        Queue::assertNotPushed(DeliverAlert::class, fn (DeliverAlert $job): bool => $job->channelId === $unverified->id);
+    }
+
+    public function test_an_unverified_target_can_ask_for_a_fresh_code()
+    {
+        $channel = NotificationChannel::factory()->for($this->account)->unverified()->create();
+
+        $this->actingAs($this->account)
+            ->post(route('notifications.resend', 'email'))
+            ->assertSessionHasNoErrors();
+
+        $code = $this->sentCode($channel);
+        $this->actingAs($this->account)
+            ->post(route('notifications.verify', 'email'), ['code' => $code])
+            ->assertSessionHasNoErrors();
+
+        $this->assertNotNull($channel->fresh()->verified_at);
     }
 
     public function test_an_alert_about_an_account_reaches_it_its_reseller_and_the_administrators_once()
@@ -244,5 +350,31 @@ class NotificationTest extends TestCase
         // Nothing new: nothing again.
         $this->artisan('rayxo:check-alerts')->assertSuccessful();
         Queue::assertPushed(DeliverAlert::class, 3);
+    }
+
+    /**
+     * The code the panel sent to a channel, read from the queued job.
+     */
+    private function sentCode(NotificationChannel $channel): string
+    {
+        $code = null;
+
+        Queue::assertPushed(SendVerificationCode::class, function (SendVerificationCode $job) use ($channel, &$code): bool {
+            if ($job->channelId === $channel->id) {
+                $code = $job->code;
+            }
+
+            return $code !== null;
+        });
+
+        return (string) $code;
+    }
+
+    /**
+     * A six-digit code that is never equal to the given one.
+     */
+    private function otherCode(string $code): string
+    {
+        return str_pad((string) (((int) $code + 1) % 1000000), 6, '0', STR_PAD_LEFT);
     }
 }

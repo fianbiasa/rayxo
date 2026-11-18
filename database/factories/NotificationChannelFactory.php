@@ -13,7 +13,9 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 class NotificationChannelFactory extends Factory
 {
     /**
-     * Define the model's default state: email for every alert.
+     * Define the model's default state: a verified email channel for every
+     * alert. A channel is created verified so alert tests deliver; use
+     * unverified() for the challenge flow.
      *
      * @return array<string, mixed>
      */
@@ -25,11 +27,20 @@ class NotificationChannelFactory extends Factory
             'target' => fake()->safeEmail(),
             'events' => array_keys(NotificationEvents::ALL),
             'enabled' => true,
+            'verified_at' => now(),
         ];
     }
 
     public function telegram(string $chatId = '123456789'): static
     {
         return $this->state(fn (): array => ['type' => 'telegram', 'target' => $chatId]);
+    }
+
+    /**
+     * A channel whose target has not confirmed its code yet.
+     */
+    public function unverified(): static
+    {
+        return $this->state(fn (): array => ['verified_at' => null]);
     }
 }

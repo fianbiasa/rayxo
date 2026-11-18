@@ -4,12 +4,14 @@ namespace App\Services;
 
 use App\Enums\Role;
 use App\Jobs\DeliverAlert;
+use App\Jobs\SendVerificationCode;
 use App\Models\NotificationChannel;
 use App\Models\User;
 use App\Support\NotificationEvents;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -20,6 +22,9 @@ use Illuminate\Validation\ValidationException;
 class NotificationService
 {
     public const DEDUPE_HOURS = 24;
+
+    /** How long a verification code stays good. */
+    public const CHALLENGE_MINUTES = 30;
 
     public function __construct(
         private AuditLogger $audit,
@@ -39,12 +44,17 @@ class NotificationService
             throw ValidationException::withMessages(['target' => __('No Telegram bot is set up on this server yet.')]);
         }
 
-        return DB::transaction(function () use ($account, $type, $target, $events, $enabled, $actor): NotificationChannel {
-            $channel = $account->notificationChannels()->firstOrNew(['type' => $type]);
-            $channel->fill(['target' => $target, 'events' => $events, 'enabled' => $enabled]);
+        $channel = $account->notificationChannels()->firstOrNew(['type' => $type]);
+        $channel->fill(['target' => $target, 'events' => $events, 'enabled' => $enabled]);
 
-            if ($channel->isDirty('target')) {
+        // A new or changed target has not proved it is read, so it starts
+        // unverified and gets a fresh code; alerts wait until it is confirmed.
+        $targetChanged = $channel->isDirty('target');
+
+        DB::transaction(function () use ($channel, $targetChanged, $type, $enabled, $actor): void {
+            if ($targetChanged) {
                 $channel->last_error = null;
+                $channel->verified_at = null;
             }
 
             $channel->save();
@@ -54,16 +64,61 @@ class NotificationService
                 'events' => $channel->events,
                 'enabled' => $enabled,
             ], $actor);
-
-            return $channel;
         });
+
+        if ($targetChanged) {
+            $this->issueChallenge($channel);
+        }
+
+        return $channel;
     }
 
     public function removeChannel(NotificationChannel $channel, User $actor): void
     {
+        Cache::forget($this->challengeKey($channel));
+
         $channel->delete();
 
         $this->audit->record('notification.channel_removed', $channel, ['type' => $channel->type], $actor);
+    }
+
+    /**
+     * Send the channel's target a fresh one-time code and mark the target as
+     * waiting for it. The hashed code is kept in the cache, not the database,
+     * and expires on its own.
+     */
+    public function issueChallenge(NotificationChannel $channel): void
+    {
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
+        Cache::put($this->challengeKey($channel), Hash::make($code), now()->addMinutes(self::CHALLENGE_MINUTES));
+
+        SendVerificationCode::dispatch($channel->id, $code);
+    }
+
+    /**
+     * Confirm a channel's target with the code sent to it. Returns false for a
+     * wrong or expired code and leaves the channel unverified.
+     */
+    public function confirm(NotificationChannel $channel, string $code, User $actor): bool
+    {
+        $hash = Cache::get($this->challengeKey($channel));
+
+        if (! is_string($hash) || ! Hash::check($code, $hash)) {
+            return false;
+        }
+
+        Cache::forget($this->challengeKey($channel));
+        $channel->forceFill(['verified_at' => now()])->save();
+
+        $this->audit->record('notification.channel_verified', $channel, ['type' => $channel->type], $actor);
+
+        return true;
+    }
+
+    private function challengeKey(NotificationChannel $channel): string
+    {
+        return 'notify-verify:'.$channel->id;
     }
 
     /**
@@ -100,9 +155,10 @@ class NotificationService
     }
 
     /**
-     * Queue the alert for every enabled channel of the recipients that takes
-     * this kind of alert, unless it went out within the last hours. Returns
-     * how many channels it was queued for.
+     * Queue the alert for every enabled and verified channel of the recipients
+     * that takes this kind of alert, unless it went out within the last hours.
+     * An unverified target is skipped. Returns how many channels it was queued
+     * for.
      *
      * @param  Collection<int, User>  $recipients
      */
@@ -116,6 +172,7 @@ class NotificationService
             ->with('user')
             ->whereIn('user_id', $recipients->pluck('id')->unique())
             ->where('enabled', true)
+            ->whereNotNull('verified_at')
             ->get()
             ->filter(fn (NotificationChannel $channel): bool => in_array($event, $channel->events, true)
                 && in_array($event, NotificationEvents::for($channel->user->role), true));
