@@ -313,6 +313,14 @@ test -f /var/lib/rayxo/storage/logs/auth.log || { echo "panel auth.log is missin
 sample="[2026-01-02 03:04:05] Failed panel login for \"admin\" from 203.0.113.7"
 fail2ban-regex "$sample" /etc/fail2ban/filter.d/rayxo-panel.conf | grep -qE "[1-9][0-9]* matched" \
     || { echo "the rayxo-panel filter did not match the panel log line"; exit 1; }
+# These two jails watch services whose systemd unit and journal fields differ
+# from the stock jails names, so their journalmatch must be overridden or they
+# silently see nothing. pure-ftpd runs as pure-ftpd-mysql; postfix smtpd runs
+# under postfix@-.service.
+fail2ban-client get pure-ftpd journalmatch | grep -q "SYSLOG_IDENTIFIER=pure-ftpd" \
+    || { echo "the pure-ftpd jail does not match the pure-ftpd syslog identifier"; exit 1; }
+fail2ban-client get postfix-sasl journalmatch | grep -q "postfix@-.service" \
+    || { echo "the postfix-sasl jail does not match the postfix@-.service unit"; exit 1; }
 echo "    fail2ban active; jails: $jails"
 ' || die "fail2ban is not set up as expected"
 

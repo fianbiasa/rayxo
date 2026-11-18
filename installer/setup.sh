@@ -2217,9 +2217,16 @@ enabled = true
 
 [postfix-sasl]
 enabled = true
+# Ubuntu runs smtpd under postfix@-.service, not postfix.service, so the
+# stock jail would see no SASL authentication failures in the journal.
+journalmatch = _SYSTEMD_UNIT=postfix@-.service
 
 [pure-ftpd]
 enabled = true
+# RAYXO runs pure-ftpd-mysql, whose journal entries carry _COMM=pure-ftpd-mysql
+# and _SYSTEMD_UNIT=pure-ftpd-mysql.service, neither of which the stock jail
+# matches; its syslog identifier is "pure-ftpd" either way, so match that.
+journalmatch = SYSLOG_IDENTIFIER=pure-ftpd
 F2B
 
     # The panel's own failed-login jail reads a log file, not the journal, so
