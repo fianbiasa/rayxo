@@ -384,8 +384,11 @@ class ServerSettingsService
      * password each role may set. Minimums are clamped so no role ever goes
      * below the production default.
      *
-     * @param  list<string>  $require2fa
-     * @param  array<string, int>  $minLengths
+     * Both come straight from the request, so each is normalised here: only
+     * admin and reseller may be required, and every minimum is clamped.
+     *
+     * @param  array<array-key, mixed>  $require2fa  the role values to require 2FA for
+     * @param  array<array-key, mixed>  $minLengths  the shortest password, keyed by role value
      */
     public function setSecurityPolicy(array $require2fa, array $minLengths, User $actor): void
     {

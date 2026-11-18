@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\TryPanelPortRequest;
 use App\Http\Requests\Admin\UpdateMailSendLimitsRequest;
 use App\Http\Requests\Admin\UpdateNameserversRequest;
 use App\Http\Requests\Admin\UpdatePhpUploadLimitsRequest;
+use App\Http\Requests\Admin\UpdateSecurityPolicyRequest;
 use App\Http\Requests\Admin\UpdateServerHostnameRequest;
 use App\Http\Requests\Admin\UpdateServerTimezoneRequest;
 use App\Services\AuditLogger;
@@ -78,7 +79,29 @@ class ServerSettingController extends Controller
                 ...$this->settings->mailSendLimits(),
                 'default_account' => ServerSettingsService::DEFAULT_MAIL_SEND_LIMIT_ACCOUNT,
             ],
+            'security_policy' => [
+                ...$this->settings->securityPolicy(),
+                'default_min' => ServerSettingsService::DEFAULT_PASSWORD_MIN_LENGTH,
+                'max_min' => ServerSettingsService::MAX_PASSWORD_MIN_LENGTH,
+            ],
         ]);
+    }
+
+    /**
+     * Set which roles must have two-factor authentication and the shortest
+     * password each role may set.
+     */
+    public function updateSecurityPolicy(UpdateSecurityPolicyRequest $request): RedirectResponse
+    {
+        $this->settings->setSecurityPolicy(
+            $request->array('require_2fa'),
+            $request->array('password_min_length'),
+            $request->user(),
+        );
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Security policy saved.')]);
+
+        return back();
     }
 
     /**

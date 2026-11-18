@@ -39,7 +39,7 @@ class StoreAccountRequest extends FormRequest
         return [
             'username' => ['required', 'string', new ValidUsername, new UsernameNotBeingMoved, Rule::unique(User::class)],
             ...$this->profileRules(hostingAccount: $this->input('role') === Role::User->value),
-            'password' => $this->passwordRules(),
+            'password' => $this->passwordRules(Role::tryFrom((string) $this->input('role')) ?? Role::User),
             'role' => ['required', Rule::in(array_map(fn (Role $role): string => $role->value, $roles))],
             'domain' => ['exclude_unless:role,user', 'nullable', 'string', new ValidDomain],
             'package_id' => [

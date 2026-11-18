@@ -395,6 +395,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('server-settings/mail-limits', [ServerSettingController::class, 'updateMailSendLimits'])
             ->middleware('throttle:10,1,server-mail-limits')
             ->name('server-settings.mail-limits');
+        Route::put('server-settings/security-policy', [ServerSettingController::class, 'updateSecurityPolicy'])
+            ->middleware('throttle:10,1,server-security-policy')
+            ->name('server-settings.security-policy');
         Route::put('server-settings/nameservers', [ServerSettingController::class, 'updateNameservers'])
             ->middleware('throttle:10,1,server-nameservers')
             ->name('server-settings.nameservers');
