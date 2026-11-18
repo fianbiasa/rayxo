@@ -8,6 +8,7 @@ use App\Jobs\TransferAccount;
 use App\Models\AccountTransfer;
 use App\Models\Package;
 use App\Models\User;
+use App\Support\OutboundHost;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
@@ -61,6 +62,13 @@ class AccountTransferService
 
         if (! is_array($parts) || ($parts['scheme'] ?? '') !== 'https' || ! is_string($parts['host'] ?? null) || $parts['host'] === '' || isset($parts['user']) || isset($parts['pass'])) {
             throw ValidationException::withMessages(['source_url' => __('Enter the other panel\'s address starting with https://, such as https://old.example.com:2222.')]);
+        }
+
+        // The panel fetches this URL and shows the response, so refuse an
+        // internal address (loopback, link-local, private range) to keep it
+        // from being used to probe services on the server's own network.
+        if (OutboundHost::isInternal($parts['host'])) {
+            throw ValidationException::withMessages(['source_url' => __('The address must be a public hostname, not an internal or private address.')]);
         }
 
         return 'https://'.strtolower($parts['host']).(isset($parts['port']) ? ':'.$parts['port'] : '');

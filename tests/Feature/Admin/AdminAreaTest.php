@@ -42,6 +42,18 @@ class AdminAreaTest extends TestCase
         }
     }
 
+    public function test_a_bound_admin_route_hides_whether_a_record_exists_from_non_admins()
+    {
+        // The role check runs before route-model binding, so a missing id
+        // returns the same 403 as an existing one — no 404-vs-403 existence
+        // enumeration for an authenticated non-admin.
+        foreach ([User::factory()->create(), User::factory()->reseller()->create()] as $account) {
+            $this->actingAs($account)
+                ->get(route('admin.dns.zones.show', ['dnsZone' => 999999]))
+                ->assertForbidden();
+        }
+    }
+
     public function test_admins_can_list_tasks_without_seeing_payloads()
     {
         $admin = User::factory()->admin()->create();

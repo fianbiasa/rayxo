@@ -13,6 +13,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -40,6 +41,15 @@ return Application::configure(basePath: dirname(__DIR__))
             'login-key' => EnsureLoginKeyAllows::class,
             'verified' => EnsureEmailIsVerified::class,
         ]);
+
+        // Run the role and login-key checks before route-model binding (but
+        // after authentication, which is earlier in the priority list), so a
+        // request without the required role or permission is refused before a
+        // bound model is resolved. Otherwise a missing id (404) and an
+        // existing id (403) would tell an authenticated caller which records
+        // exist panel-wide.
+        $middleware->prependToPriorityList(SubstituteBindings::class, EnsureUserHasRole::class);
+        $middleware->prependToPriorityList(SubstituteBindings::class, EnsureLoginKeyAllows::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // A custom certificate's private key must never reach the session

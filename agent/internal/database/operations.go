@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -101,7 +102,11 @@ func (m *Manager) Import(ctx context.Context, as Identity, user, name, file stri
 		return err
 	}
 
-	if !strings.HasPrefix(file, as.Home+"/") {
+	// Resolve the path first so "../" cannot escape the home, then confine it
+	// there. The import also runs as the account user, so this is defence in
+	// depth on top of the caller's own path check.
+	clean := filepath.Clean(file)
+	if clean != as.Home && !strings.HasPrefix(clean, as.Home+"/") {
 		return errors.New("the file to import must be in the account's home")
 	}
 
@@ -114,7 +119,7 @@ func (m *Manager) Import(ctx context.Context, as Identity, user, name, file stri
 		"--binary-mode", "--batch", "--default-character-set=utf8mb4",
 	}
 
-	return m.cfg.Import(ctx, as, file, args)
+	return m.cfg.Import(ctx, as, clean, args)
 }
 
 // Maintain runs operation (one of Operations) on every table of database

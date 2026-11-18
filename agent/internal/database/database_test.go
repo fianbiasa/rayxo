@@ -203,6 +203,9 @@ func TestApplyUserRefusesWhatIsNotTheAccounts(t *testing.T) {
 		func() error {
 			return manager.Import(ctx, Identity{Home: "/home/budi"}, "budi", "budi_wp", "/home/sari/x.sql")
 		},
+		func() error {
+			return manager.Import(ctx, Identity{Home: "/home/budi"}, "budi", "budi_wp", "/home/budi/../../etc/passwd")
+		},
 		func() error { return manager.CreateDatabase(ctx, "budi", "rayxo") },
 		func() error { return manager.DeleteDatabase(ctx, "budi", "sari_shop") },
 		func() error { return manager.DeleteUser(ctx, "budi", "root") },
