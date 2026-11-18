@@ -101,6 +101,8 @@ export const auditActionLabels: Record<string, string> = {
     'server.panel_port_cancelled': 'Percobaan port panel dibatalkan',
     'server.mail_send_limits_changed': 'Batas kirim email server diubah',
     'server.security_policy_changed': 'Kebijakan keamanan diubah',
+    'bfm.unbanned': 'IP dibuka dari blokir brute-force',
+    'bfm.whitelist_changed': 'Whitelist brute-force diubah',
     'system.file_changed': 'File konfigurasi diubah',
     'system.file_restored': 'File konfigurasi dipulihkan',
     'mail.queue_retried': 'Email di antrean dikirim ulang',

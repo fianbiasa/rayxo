@@ -25,6 +25,7 @@ import {
     Palette,
     ScrollText,
     Settings,
+    ShieldBan,
     SlidersHorizontal,
     SquareTerminal,
     Users,
@@ -36,6 +37,7 @@ import { index as databasesIndex } from '@/routes/databases';
 import { index as dnsIndex } from '@/routes/dns';
 import { index as accountsIndex } from '@/routes/admin/accounts';
 import { index as auditLogsIndex } from '@/routes/admin/audit-logs';
+import { index as bruteForceIndex } from '@/routes/admin/brute-force';
 import { index as serverBackupsIndex } from '@/routes/admin/backups';
 import { index as transfersIndex } from '@/routes/admin/transfers';
 import { index as ipAddressesIndex } from '@/routes/admin/ip-addresses';
@@ -164,6 +166,11 @@ export function useNavigation(): {
             href: processesIndex(),
             icon: Cpu,
         };
+        const bruteForce: NavItem = {
+            title: 'Brute-force',
+            href: bruteForceIndex(),
+            icon: ShieldBan,
+        };
         const mailQueue: NavItem = {
             title: 'Antrean Email',
             href: mailQueueIndex(),
@@ -214,6 +221,7 @@ export function useNavigation(): {
                 items: [
                     services,
                     processes,
+                    bruteForce,
                     mailQueue,
                     ipAddresses,
                     serverBackups,

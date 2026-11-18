@@ -61,6 +61,9 @@ final class FakeAgentClient implements AgentClient
             'mail.queue_retry' => ['id' => $params['id'] ?? '', 'simulated' => true],
             'mail.queue_delete' => ['done' => $params['ids'] ?? [], 'failed' => [], 'simulated' => true],
             'service.action' => ['unit' => $params['unit'] ?? '', 'action' => $params['action'] ?? '', 'simulated' => true],
+            'bfm.status' => $this->bruteForceReport(),
+            'bfm.unban' => ['ip' => $params['ip'] ?? '', 'simulated' => true],
+            'bfm.whitelist' => ['ips' => $params['ips'] ?? [], 'simulated' => true],
             'fs.list' => $this->fileListing((string) ($params['username'] ?? ''), (string) ($params['path'] ?? '')),
             'fs.read' => ['content' => "<?php\n\necho 'Hello from RAYXO';\n", 'size' => 33, 'version' => 'simulated-1'],
             'fs.write' => ['size' => strlen((string) ($params['content'] ?? '')), 'version' => 'simulated-'.now()->getTimestamp()],
@@ -158,6 +161,27 @@ final class FakeAgentClient implements AgentClient
                 'outcome' => 'restarted',
                 'message' => 'was not running; started again',
             ]],
+            'simulated' => true,
+        ];
+    }
+
+    /**
+     * fail2ban's jails and bans like a quiet server with one SSH offender,
+     * for local development on macOS.
+     *
+     * @return array<string, mixed>
+     */
+    private function bruteForceReport(): array
+    {
+        return [
+            'jails' => [
+                ['name' => 'sshd', 'currently_failed' => 1, 'total_failed' => 14, 'currently_banned' => 1, 'total_banned' => 3, 'banned_ips' => ['203.0.113.7']],
+                ['name' => 'dovecot', 'currently_failed' => 0, 'total_failed' => 2, 'currently_banned' => 0, 'total_banned' => 0, 'banned_ips' => []],
+                ['name' => 'postfix-sasl', 'currently_failed' => 0, 'total_failed' => 0, 'currently_banned' => 0, 'total_banned' => 0, 'banned_ips' => []],
+                ['name' => 'pure-ftpd', 'currently_failed' => 0, 'total_failed' => 0, 'currently_banned' => 0, 'total_banned' => 0, 'banned_ips' => []],
+                ['name' => 'rayxo-panel', 'currently_failed' => 0, 'total_failed' => 5, 'currently_banned' => 0, 'total_banned' => 1, 'banned_ips' => []],
+            ],
+            'whitelist' => ['198.51.100.4'],
             'simulated' => true,
         ];
     }

@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AccountController;
 use App\Http\Controllers\Admin\AccountImportController;
 use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\BrandingController;
+use App\Http\Controllers\Admin\BruteForceController;
 use App\Http\Controllers\Admin\DnsController as AdminDnsController;
 use App\Http\Controllers\Admin\IpAddressController;
 use App\Http\Controllers\Admin\LoginHistoryController;
@@ -337,6 +338,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('ip-addresses/{ipAddress}', [IpAddressController::class, 'update'])->name('ip-addresses.update');
         Route::delete('ip-addresses/{ipAddress}', [IpAddressController::class, 'destroy'])->middleware('throttle:30,1,ip-addresses')->name('ip-addresses.destroy');
         Route::get('services', [ServiceController::class, 'index'])->name('services.index');
+        Route::get('brute-force', [BruteForceController::class, 'index'])->middleware('throttle:60,1,admin-brute-force')->name('brute-force.index');
+        Route::post('brute-force/unban', [BruteForceController::class, 'unban'])->middleware('throttle:30,1,admin-brute-force-unban')->name('brute-force.unban');
+        Route::put('brute-force/whitelist', [BruteForceController::class, 'updateWhitelist'])->middleware('throttle:20,1,admin-brute-force-whitelist')->name('brute-force.whitelist');
         Route::get('processes', [ProcessController::class, 'index'])->middleware('throttle:60,1,admin-processes')->name('processes.index');
         Route::post('processes/kill', [ProcessController::class, 'kill'])->middleware('throttle:30,1,admin-process-kill')->name('processes.kill');
         Route::get('dns', [AdminDnsController::class, 'index'])->name('dns.index');
