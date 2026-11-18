@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Agent\AgentClient;
 use App\Agent\AgentException;
+use App\Enums\Role;
 use App\Enums\TaskStatus;
 use App\Models\Setting;
 use App\Models\Task;
@@ -54,6 +55,26 @@ class ServerSettingsService
      * The largest limit the agent takes.
      */
     public const MAX_MAIL_SEND_LIMIT = 10_000_000;
+
+    /**
+     * Which roles must have two-factor authentication to use the panel (a
+     * JSON list of role values; only admins and resellers can be required).
+     */
+    public const REQUIRE_2FA_ROLES = 'security.require_2fa_roles';
+
+    /**
+     * The shortest password each role may set (a JSON object keyed by role
+     * value), on top of the complexity rules every password already follows.
+     */
+    public const PASSWORD_MIN_LENGTH = 'security.password_min_length';
+
+    /**
+     * The shortest password allowed — the production default, which no role
+     * may go below — and the longest minimum the admin may require.
+     */
+    public const DEFAULT_PASSWORD_MIN_LENGTH = 12;
+
+    public const MAX_PASSWORD_MIN_LENGTH = 128;
 
     public function __construct(
         private AgentClient $agent,
@@ -305,6 +326,86 @@ class ServerSettingsService
             'pending' => in_array($task?->status, [TaskStatus::Queued, TaskStatus::Running], true),
             'error' => $task?->status === TaskStatus::Failed ? ($task->error ?? '') : null,
         ];
+    }
+
+    /**
+     * The security policy: which roles must have two-factor authentication,
+     * and the shortest password each role may set.
+     *
+     * @return array{require_2fa: list<string>, password_min_length: array<string, int>}
+     */
+    public function securityPolicy(): array
+    {
+        return [
+            'require_2fa' => $this->require2faRoles(),
+            'password_min_length' => [
+                Role::Admin->value => $this->passwordMinLength(Role::Admin),
+                Role::Reseller->value => $this->passwordMinLength(Role::Reseller),
+                Role::User->value => $this->passwordMinLength(Role::User),
+            ],
+        ];
+    }
+
+    /**
+     * The roles that must have two-factor authentication. Only admins and
+     * resellers can be required; anything else stored is ignored.
+     *
+     * @return list<string>
+     */
+    public function require2faRoles(): array
+    {
+        $stored = $this->get(self::REQUIRE_2FA_ROLES);
+        $allowed = [Role::Admin->value, Role::Reseller->value];
+
+        return is_array($stored) ? array_values(array_intersect($allowed, $stored)) : [];
+    }
+
+    public function requiresTwoFactor(Role $role): bool
+    {
+        return in_array($role->value, $this->require2faRoles(), true);
+    }
+
+    /**
+     * The shortest password role may set — never below the production default,
+     * so the policy can only make passwords stronger.
+     */
+    public function passwordMinLength(Role $role): int
+    {
+        $stored = $this->get(self::PASSWORD_MIN_LENGTH);
+        $value = is_array($stored) ? ($stored[$role->value] ?? null) : null;
+
+        return is_int($value)
+            ? max(self::DEFAULT_PASSWORD_MIN_LENGTH, min(self::MAX_PASSWORD_MIN_LENGTH, $value))
+            : self::DEFAULT_PASSWORD_MIN_LENGTH;
+    }
+
+    /**
+     * Save which roles must have two-factor authentication and the shortest
+     * password each role may set. Minimums are clamped so no role ever goes
+     * below the production default.
+     *
+     * @param  list<string>  $require2fa
+     * @param  array<string, int>  $minLengths
+     */
+    public function setSecurityPolicy(array $require2fa, array $minLengths, User $actor): void
+    {
+        $allowed = [Role::Admin->value, Role::Reseller->value];
+        $require = array_values(array_intersect($allowed, array_map('strval', $require2fa)));
+
+        $mins = [];
+        foreach ([Role::Admin, Role::Reseller, Role::User] as $role) {
+            $value = (int) ($minLengths[$role->value] ?? self::DEFAULT_PASSWORD_MIN_LENGTH);
+            $mins[$role->value] = max(self::DEFAULT_PASSWORD_MIN_LENGTH, min(self::MAX_PASSWORD_MIN_LENGTH, $value));
+        }
+
+        $before = $this->securityPolicy();
+        $this->put(self::REQUIRE_2FA_ROLES, $require);
+        $this->put(self::PASSWORD_MIN_LENGTH, $mins);
+
+        $this->audit->record('server.security_policy_changed', null, [
+            'from' => $before,
+            'to' => ['require_2fa' => $require, 'password_min_length' => $mins],
+        ], $actor);
     }
 
     private function limitOrNull(mixed $value): ?int
