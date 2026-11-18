@@ -17,6 +17,7 @@ import (
 
 	"rayxo/agent/internal/actions"
 	"rayxo/agent/internal/files"
+	"rayxo/agent/internal/firewall"
 	"rayxo/agent/internal/panelport"
 	"rayxo/agent/internal/reconfigure"
 	"rayxo/agent/internal/rpc"
@@ -126,6 +127,16 @@ func run(logger *slog.Logger, cfg config) error {
 	changer := reconfigure.New(reconfigure.DefaultConfig())
 	ports := panelport.New(panelport.DefaultConfig())
 
+	firewallConfig := firewall.DefaultConfig()
+	firewallConfig.PanelPort = ports.Current
+	fw := firewall.New(firewallConfig)
+
+	// Load the confirmed firewall again after a reboot cleared the kernel's
+	// rules; a change left unconfirmed is dropped, never kept.
+	if err := fw.Restore(context.Background()); err != nil {
+		logger.Error("could not restore the firewall", "error", err)
+	}
+
 	registry := rpc.NewRegistry()
 	actions.Register(registry, actions.Config{
 		Files: actions.FilesConfig{
@@ -143,6 +154,7 @@ func run(logger *slog.Logger, cfg config) error {
 		Services:    manager,
 		Reconfigure: changer,
 		PanelPort:   ports,
+		Firewall:    fw,
 	})
 
 	listener, err := rpc.Listen(cfg.socketPath, 0o660, gid)
@@ -160,6 +172,10 @@ func run(logger *slog.Logger, cfg config) error {
 	// Closes a panel port tried but not confirmed in time, also after the
 	// agent restarted in the meantime.
 	go ports.Watch(ctx, 15*time.Second, changer.Running)
+
+	// Reverts a firewall change tried but not confirmed in time, also after
+	// the agent restarted in the meantime.
+	go fw.Watch(ctx, 15*time.Second)
 
 	server := &rpc.Server{
 		Registry:    registry,

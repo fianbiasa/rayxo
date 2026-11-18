@@ -13,6 +13,7 @@ import (
 	"rayxo/agent/internal/database"
 	"rayxo/agent/internal/dns"
 	"rayxo/agent/internal/files"
+	"rayxo/agent/internal/firewall"
 	"rayxo/agent/internal/jail"
 	"rayxo/agent/internal/mail"
 	"rayxo/agent/internal/mailqueue"
@@ -42,6 +43,9 @@ type Config struct {
 	// rayxod also watches them. nil makes them for the real server.
 	Reconfigure *reconfigure.Manager
 	PanelPort   *panelport.Manager
+	// Firewall manages the nftables firewall; rayxod also watches its trial.
+	// nil makes one for the real server.
+	Firewall *firewall.Manager
 }
 
 // Register adds all agent methods to registry.
@@ -181,6 +185,15 @@ func Register(registry *rpc.Registry, config Config) {
 	}
 
 	for name, method := range bfmMethods(bfm.New(bfm.DefaultConfig())) {
+		registry.Register(name, method)
+	}
+
+	fw := config.Firewall
+	if fw == nil {
+		fw = firewall.New(firewall.DefaultConfig())
+	}
+
+	for name, method := range firewallMethods(fw) {
 		registry.Register(name, method)
 	}
 }
