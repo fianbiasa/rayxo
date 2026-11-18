@@ -297,5 +297,18 @@ set -e
 echo "    net.ipv4.ip_nonlocal_bind = 1"
 ' || die "ip_nonlocal_bind is not set after install"
 
+# fail2ban must be running with its login jails loaded (a bad jail config would
+# keep it from starting).
+step "fail2ban is running with the login jails"
+as_root bash -c '
+set -e
+systemctl is-active --quiet fail2ban || { echo "fail2ban is not active"; exit 1; }
+jails=$(fail2ban-client status | sed -n "s/.*Jail list:[[:space:]]*//p")
+for jail in sshd dovecot postfix-sasl pure-ftpd; do
+    printf "%s" "$jails" | tr ", " "\n\n" | grep -qx "$jail" || { echo "jail $jail is not active (have: $jails)"; exit 1; }
+done
+echo "    fail2ban active; jails: $jails"
+' || die "fail2ban is not set up as expected"
+
 passed=1
 step "Passed: a clean install works end to end"

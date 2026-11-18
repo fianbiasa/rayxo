@@ -1185,6 +1185,10 @@ DEBCONF
 
     quietly "${apt[@]}" install postfix-mysql redis-server rspamd
 
+    # fail2ban watches the auth logs and bans repeat offenders through its own
+    # nftables table, so it works whether the managed firewall is on or not.
+    quietly "${apt[@]}" install fail2ban
+
     # GoAccess makes the visitor reports of websites (the agent's stats.report).
     quietly "${apt[@]}" install --no-install-recommends goaccess
 
@@ -2177,6 +2181,50 @@ configure_sftp() {
 dns_listen_addresses() {
     printf '127.0.0.1\n'
     ip -o addr show scope global | awk '{split($4, a, "/"); print a[1]}'
+}
+
+# fail2ban bans IPs that repeatedly fail to sign in — over SSH, FTP, IMAP/POP3
+# and SMTP — through its own nftables table (so it works whether the managed
+# firewall is on or off). Bans are conservative, loopback is never banned, and
+# the panel manages the ban list. Jails use the systemd journal, where these
+# services log on Ubuntu.
+configure_fail2ban() {
+    step "Mengatur fail2ban (blokir percobaan login beruntun)"
+
+    cat >/etc/fail2ban/jail.local <<'F2B'
+# Managed by rayxo setup.sh; changes are overwritten. Tune bans from the panel.
+[DEFAULT]
+# Never ban the server itself.
+ignoreip = 127.0.0.1/8 ::1
+backend = systemd
+# Five failures within ten minutes earns a one-hour ban; a repeat offender's
+# ban grows each time, up to a day.
+findtime = 10m
+maxretry = 5
+bantime = 1h
+bantime.increment = true
+bantime.factor = 24
+bantime.maxtime = 1d
+# Ban through fail2ban's own nftables table, apart from the managed firewall.
+banaction = nftables-multiport
+banaction_allports = nftables-allports
+
+[sshd]
+enabled = true
+
+[dovecot]
+enabled = true
+
+[postfix-sasl]
+enabled = true
+
+[pure-ftpd]
+enabled = true
+F2B
+
+    quietly systemctl enable fail2ban
+    systemctl restart fail2ban
+    info "fail2ban aktif (SSH, FTP, IMAP/POP3, SMTP)"
 }
 
 # DNS for the zones of hosting accounts. PowerDNS Authoritative serves them
@@ -3715,6 +3763,7 @@ main() {
     configure_quota
     configure_logrotate
     configure_cron_slices
+    configure_fail2ban
     install_services
     verify_install
     if [[ -n "$restore_file" ]]; then
