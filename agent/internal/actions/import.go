@@ -227,12 +227,14 @@ func (s serverBackupActions) importConvert(_ context.Context, raw json.RawMessag
 	}
 
 	return map[string]any{
-		"name":     params.Name,
-		"size":     info.Size(),
-		"manifest": string(params.Manifest),
-		"settings": string(params.Settings),
-		"entries":  copied.Entries,
-		"dropped":  copied.Dropped,
+		"name":          params.Name,
+		"size":          info.Size(),
+		"manifest":      string(params.Manifest),
+		"settings":      string(params.Settings),
+		"entries":       copied.Entries,
+		"dropped":       copied.Dropped,
+		"refused":       copied.Refused,
+		"refused_names": copied.RefusedNames,
 	}, nil
 }
 

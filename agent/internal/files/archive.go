@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -386,14 +387,17 @@ func (t *tarWriter) Close() error {
 
 // ExtractResult is what extracting an archive did. Skipped entries already
 // existed (without overwrite); refused ones had names that lead out of the
-// folder, or were special files.
+// folder, or were special files. RefusedNames are the first maxDroppedNames
+// names refused because they could lead out (not the special files), quoted
+// so non-UTF-8 bytes are safe to show.
 type ExtractResult struct {
-	Destination string `json:"destination"`
-	Files       int    `json:"files"`
-	Folders     int    `json:"folders"`
-	Links       int    `json:"links"`
-	Skipped     int    `json:"skipped"`
-	Refused     int    `json:"refused"`
+	Destination  string   `json:"destination"`
+	Files        int      `json:"files"`
+	Folders      int      `json:"folders"`
+	Links        int      `json:"links"`
+	Skipped      int      `json:"skipped"`
+	Refused      int      `json:"refused"`
+	RefusedNames []string `json:"refused_names,omitempty"`
 }
 
 // archiveEntry is one entry of an archive being extracted.
@@ -622,6 +626,10 @@ func (x *extractor) place(entry archiveEntry) error {
 
 	if !ok || entry.kind == TypeOther {
 		x.result.Refused++
+
+		if !ok && len(x.result.RefusedNames) < maxDroppedNames {
+			x.result.RefusedNames = append(x.result.RefusedNames, strconv.Quote(entry.name))
+		}
 
 		return nil
 	}

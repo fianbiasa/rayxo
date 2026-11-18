@@ -153,7 +153,8 @@ class AccountImportService
             ]);
 
             $server = $this->backups->register($name, (int) ($converted['size'] ?? 0), $converted, $actor);
-            $import->forceFill(['server_backup_id' => $server->id, 'notes' => $plan['notes']])->save();
+            $notes = [...$plan['notes'], ...ForeignBackup::droppedNotes($converted)];
+            $import->forceFill(['server_backup_id' => $server->id, 'notes' => $notes])->save();
 
             $account = $this->restores->restore($server, [
                 'email' => $import->email,

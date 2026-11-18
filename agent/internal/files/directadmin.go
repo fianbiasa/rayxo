@@ -23,7 +23,7 @@ const directAdminMeta = "backup"
 
 // readDirectAdmin gathers what a DirectAdmin backup holds.
 func readDirectAdmin(stream io.Reader, in *inspector) error {
-	return walkTar(stream, func(name string, header *tar.Header, content io.Reader) error {
+	return walkTar(stream, nil, func(name string, header *tar.Header, content io.Reader) error {
 		top, rest, _ := strings.Cut(name, "/")
 
 		switch {
@@ -32,7 +32,7 @@ func readDirectAdmin(stream io.Reader, in *inspector) error {
 		case top != directAdminMeta:
 			return nil
 		case directAdminHomeArchive(rest, header):
-			return eachNested(content, func(inner string, header *tar.Header, _ io.Reader) error {
+			return eachNested(content, nil, func(inner string, header *tar.Header, _ io.Reader) error {
 				in.homeEntry(inner, header)
 
 				return nil
@@ -53,15 +53,15 @@ func readDirectAdmin(stream io.Reader, in *inspector) error {
 
 // addDirectAdminHome copies the home of a DirectAdmin backup: domains/,
 // imap/ and the archive of the rest.
-func (b *BackupWriter) addDirectAdminHome(stream io.Reader, rules []HomeRule, copied *HomeCopied) error {
-	return walkTar(stream, func(name string, header *tar.Header, content io.Reader) error {
+func (b *BackupWriter) addDirectAdminHome(stream io.Reader, rules []HomeRule, copied *HomeCopied, dropped *droppedNames) error {
+	return walkTar(stream, dropped, func(name string, header *tar.Header, content io.Reader) error {
 		top, rest, _ := strings.Cut(name, "/")
 
 		switch {
 		case top == "domains" || top == "imap":
 			return b.addHomeEntry(rules, name, header, content, copied)
 		case top == directAdminMeta && directAdminHomeArchive(rest, header):
-			return eachNested(content, func(inner string, header *tar.Header, content io.Reader) error {
+			return eachNested(content, dropped, func(inner string, header *tar.Header, content io.Reader) error {
 				return b.addHomeEntry(rules, inner, header, content, copied)
 			})
 		}
@@ -70,14 +70,16 @@ func (b *BackupWriter) addDirectAdminHome(stream io.Reader, rules []HomeRule, co
 	})
 }
 
-// eachNested hands every entry of the archive content to visit.
-func eachNested(content io.Reader, visit func(name string, header *tar.Header, content io.Reader) error) error {
+// eachNested hands every entry of the archive content to visit, collecting
+// the names of entries dropped because their names could lead out in dropped
+// (which may be nil).
+func eachNested(content io.Reader, dropped *droppedNames, visit func(name string, header *tar.Header, content io.Reader) error) error {
 	nested, err := openArchive(content)
 	if err != nil {
 		return err
 	}
 
-	err = walkTar(nested.reader, visit)
+	err = walkTar(nested.reader, dropped, visit)
 	if closed := nested.close(err == nil); err == nil {
 		err = closed
 	}

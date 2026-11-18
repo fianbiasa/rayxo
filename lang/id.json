@@ -640,6 +640,7 @@
     "DNS zones are made new here: records added by hand in the old panel (such as MX or TXT) must be added again.": "Zona DNS dibuat baru di sini: record yang dulu ditambahkan sendiri di panel lama (misalnya MX atau TXT) perlu ditambahkan lagi.",
     "The backup names no main domain.": "Backup ini tidak menyebut domain utama.",
     "The folder :name of the old home is left out: the panel uses that name.": "Folder :name di home lama tidak ikut: nama itu dipakai panel.",
+    "Some files of the home were left out because their names cannot be used here: :names.": "Beberapa file home tidak ikut karena namanya tidak bisa dipakai di sini: :names.",
     "The :panel login :name to MySQL is not moved: websites that sign in with it need another database user.": "Login MySQL :name milik :panel tidak ikut: situs yang memakainya perlu memakai pengguna database lain.",
     "The username :username from the backup cannot be used here; enter another username.": "Username :username dari backup tidak bisa dipakai di sini; isi username lain.",
     "Importing the backup. This page shows how it goes.": "Mengimpor backup. Halaman ini menampilkan perkembangannya.",

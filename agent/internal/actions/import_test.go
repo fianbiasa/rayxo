@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -256,6 +257,20 @@ func (env *serverBackupEnv) inspectImport(t *testing.T, name string) files.Forei
 	return inspection
 }
 
+// refusedNames is the list of entry names a convert result reports as left
+// out because their names could lead out of the home.
+func refusedNames(t *testing.T, result map[string]any) []string {
+	t.Helper()
+
+	names := []string{}
+
+	for _, name := range result["refused_names"].([]any) {
+		names = append(names, name.(string))
+	}
+
+	return names
+}
+
 func sortedEntries(entries map[string]string) []string {
 	return slices.Sorted(func(yield func(string) bool) {
 		for name := range entries {
@@ -494,6 +509,95 @@ func TestAnImportThatFailsLeavesNothing(t *testing.T) {
 
 	if leftovers, _ := filepath.Glob(filepath.Join(env.dir, "*")); !slices.Equal(leftovers, []string{filepath.Join(env.dir, "cpmove-budi.tar.gz")}) {
 		t.Errorf("left behind: %v", leftovers)
+	}
+}
+
+func TestAnImportReportsTheNamesOfTheEntriesItDrops(t *testing.T) {
+	env := newServerBackupEnv(t)
+
+	// A cPanel backup with two entries the importer drops: one whose name is
+	// not valid UTF-8, one whose name is absolute. Both are still left out.
+	entries := append(cpanelBackupEntries(),
+		archiveEntry{name: "cpmove-budi/homedir/caf\xe9.txt", content: "bad name"},
+		archiveEntry{name: "/etc/evil", content: "out of the home"},
+	)
+	writeBackupFile(t, filepath.Join(env.dir, "cpmove-budi.tar.gz"), compressed(t, tarOf(t, entries), "gzip"))
+
+	result, err := env.convertImport(t, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result["refused"].(float64) != 2 {
+		t.Errorf("refused = %v", result["refused"])
+	}
+
+	want := []string{strconv.Quote("cpmove-budi/homedir/caf\xe9.txt"), strconv.Quote("/etc/evil")}
+	if names := refusedNames(t, result); !slices.Equal(names, want) {
+		t.Errorf("refused names = %v", names)
+	}
+
+	// The dropped entries are still left out: the backup holds only the files
+	// with usable names, exactly as without the bad entries.
+	output := sortedEntries(archiveEntries(t, filepath.Join(env.dir, "budi-imported.tar.gz")))
+	good := []string{
+		".rayxo-backup/", ".rayxo-backup/databases/", ".rayxo-backup/databases/budi_shop.sql", ".rayxo-backup/manifest.json", ".rayxo-backup/settings.json",
+		"domains/addon.test/public_html/index.html", "domains/budi.test/public_html/index.php",
+		"imap/budi.test/info/Maildir/.Sent/cur/2", "imap/budi.test/info/Maildir/cur/1", "imap/budi.test/info/Maildir/dovecot-uidlist",
+		"perl5/Lib.pm",
+	}
+
+	if !slices.Equal(output, good) {
+		t.Errorf("entries = %v", output)
+	}
+}
+
+func TestAnImportReportsNamesDroppedFromTheNestedHome(t *testing.T) {
+	env := newServerBackupEnv(t)
+
+	// A DirectAdmin backup whose home archive (backup/home.tar.gz) holds an
+	// entry with a non-UTF-8 name: the nested walk reports it too.
+	home := tarOf(t, []archiveEntry{
+		{name: ".bashrc", content: "# shell"},
+		{name: "caf\xe9.txt", content: "bad name"},
+	})
+	entries := []archiveEntry{
+		{name: "backup", dir: true},
+		{name: "backup/user.conf", content: "username=budi\n"},
+		{name: "backup/home.tar.gz", content: string(compressed(t, home, "gzip"))},
+		{name: "domains", dir: true},
+		{name: "domains/budi.test/public_html", dir: true},
+		{name: "domains/budi.test/public_html/index.php", content: "<?php echo 'main';"},
+	}
+	writeBackupFile(t, filepath.Join(env.dir, "user.admin.budi.tar.gz"), compressed(t, tarOf(t, entries), "gzip"))
+
+	result, err := env.convertImport(t, map[string]any{
+		"kind":      files.KindDirectAdmin,
+		"source":    "user.admin.budi.tar.gz",
+		"top":       "",
+		"databases": []map[string]string{},
+		"rules": []files.HomeRule{
+			{From: ".bashrc", To: ".bashrc"},
+			{From: "domains/budi.test/public_html", To: "domains/budi.test/public_html"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result["refused"].(float64) != 1 || !slices.Equal(refusedNames(t, result), []string{strconv.Quote("caf\xe9.txt")}) {
+		t.Errorf("refused = %v, names = %v", result["refused"], result["refused_names"])
+	}
+
+	// The badly named entry of the nested home is still left out.
+	output := sortedEntries(archiveEntries(t, filepath.Join(env.dir, "budi-imported.tar.gz")))
+	want := []string{
+		".bashrc", ".rayxo-backup/", ".rayxo-backup/manifest.json", ".rayxo-backup/settings.json",
+		"domains/budi.test/public_html/", "domains/budi.test/public_html/index.php",
+	}
+
+	if !slices.Equal(output, want) {
+		t.Errorf("entries = %v", output)
 	}
 }
 
