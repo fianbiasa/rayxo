@@ -1,4 +1,4 @@
-import { Form, Head, router, usePoll } from '@inertiajs/react';
+import { Form, Head, router, useForm, usePoll } from '@inertiajs/react';
 import {
     CheckCircle2,
     Clock,
@@ -9,7 +9,7 @@ import {
     ShieldCheck,
     Upload,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import InputError from '@/components/input-error';
 import { PageHeader } from '@/components/page-header';
@@ -53,6 +53,7 @@ import {
     nameservers as updateNameservers,
     phpUploads,
     port as tryPort,
+    securityPolicy as updateSecurityPolicy,
     telegram as updateTelegram,
     timezone as updateTimezone,
 } from '@/routes/admin/server-settings';
@@ -111,6 +112,7 @@ type Props = {
     database_remote_access: boolean;
     ioncube: IonCube;
     telegram_bot: string | null;
+    security_policy: SecurityPolicy;
 };
 
 type IonCube = {
@@ -126,6 +128,13 @@ type MailLimits = {
     default_account: number;
 };
 
+type SecurityPolicy = {
+    require_2fa: string[];
+    password_min_length: { admin: number; reseller: number; user: number };
+    default_min: number;
+    max_min: number;
+};
+
 export default function ServerSettings({
     server,
     error,
@@ -139,6 +148,7 @@ export default function ServerSettings({
     database_remote_access,
     ioncube,
     telegram_bot,
+    security_policy,
 }: Props) {
     const { start, stop } = usePoll(
         5_000,
@@ -214,6 +224,8 @@ export default function ServerSettings({
             </div>
 
             <MailLimitPanel limits={mail_limits} />
+
+            <SecurityPolicyPanel policy={security_policy} />
 
             <BandwidthPanel suspendOverLimit={bandwidth.suspend_over_limit} />
 
@@ -1134,6 +1146,100 @@ function MailLimitPanel({ limits }: { limits: MailLimits }) {
                     </>
                 )}
             </Form>
+        </Panel>
+    );
+}
+
+const securityRoleLabels = {
+    admin: 'Admin',
+    reseller: 'Reseller',
+    user: 'Akun hosting',
+} as const;
+
+/**
+ * Require two-factor authentication for privileged roles, and set the shortest
+ * password each role may use. The minimum can only make passwords stronger:
+ * the server never lets it drop below the built-in default.
+ */
+function SecurityPolicyPanel({ policy }: { policy: SecurityPolicy }) {
+    const { data, setData, put, processing, errors } = useForm({
+        require_2fa: policy.require_2fa,
+        password_min_length: { ...policy.password_min_length },
+    });
+
+    const fieldErrors = errors as Record<string, string>;
+
+    const toggleRole = (role: 'admin' | 'reseller') =>
+        setData(
+            'require_2fa',
+            data.require_2fa.includes(role)
+                ? data.require_2fa.filter((value) => value !== role)
+                : [...data.require_2fa, role],
+        );
+
+    const submit = (event: FormEvent) => {
+        event.preventDefault();
+        put(updateSecurityPolicy().url, { preserveScroll: true });
+    };
+
+    return (
+        <Panel
+            title="Kebijakan keamanan"
+            description="Wajibkan verifikasi dua langkah untuk admin dan reseller, dan atur panjang minimum kata sandi per peran. Panjang minimum hanya bisa memperkuat; server tidak pernah menurunkannya di bawah bawaan."
+        >
+            <form onSubmit={submit} className="grid gap-6">
+                <fieldset className="grid gap-3">
+                    <legend className="mb-1 text-sm font-medium">
+                        Wajib verifikasi dua langkah (2FA)
+                    </legend>
+                    {(['admin', 'reseller'] as const).map((role) => (
+                        <label
+                            key={role}
+                            className="flex items-center gap-3 text-sm"
+                        >
+                            <Checkbox
+                                checked={data.require_2fa.includes(role)}
+                                onCheckedChange={() => toggleRole(role)}
+                            />
+                            {securityRoleLabels[role]}
+                        </label>
+                    ))}
+                    <InputError message={errors.require_2fa} />
+                </fieldset>
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                    {(['admin', 'reseller', 'user'] as const).map((role) => (
+                        <Field
+                            key={role}
+                            id={`min-${role}`}
+                            label={`Panjang minimum — ${securityRoleLabels[role]}`}
+                            error={fieldErrors[`password_min_length.${role}`]}
+                        >
+                            <Input
+                                id={`min-${role}`}
+                                type="number"
+                                min={policy.default_min}
+                                max={policy.max_min}
+                                value={data.password_min_length[role]}
+                                onChange={(event) =>
+                                    setData('password_min_length', {
+                                        ...data.password_min_length,
+                                        [role]: Number(event.target.value),
+                                    })
+                                }
+                                className="rounded-xl"
+                            />
+                        </Field>
+                    ))}
+                </div>
+
+                <div>
+                    <Button type="submit" disabled={processing}>
+                        {processing ? <Spinner /> : <ShieldCheck />}
+                        Simpan kebijakan keamanan
+                    </Button>
+                </div>
+            </form>
         </Panel>
     );
 }
