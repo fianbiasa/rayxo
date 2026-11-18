@@ -2,6 +2,7 @@ package firewall
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -346,4 +347,33 @@ func containsInt(list []int, value int) bool {
 	}
 
 	return false
+}
+
+// TestStatusMarshalsConfigArraysNotNull guards the default state (no state
+// file, firewall off): the config's port and IP fields must marshal to JSON
+// arrays, never null, or the panel crashes reading them (.map() on null).
+func TestStatusMarshalsConfigArraysNotNull(t *testing.T) {
+	now := time.Now()
+	m := newManager(t, &fakeNft{}, &now)
+
+	status, err := m.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+
+	encoded, err := json.Marshal(status)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	for _, want := range []string{
+		`"tcp_ports":[]`,
+		`"udp_ports":[]`,
+		`"allow_ips":[]`,
+		`"deny_ips":[]`,
+	} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("status JSON missing %s:\n%s", want, encoded)
+		}
+	}
 }

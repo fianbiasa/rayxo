@@ -195,12 +195,18 @@ function PendingTrial({ trial }: { trial: Trial }) {
 }
 
 function Editor({ active }: { active: Config }) {
+    // Guard against a config whose arrays arrive null (e.g. an older agent):
+    // the fields are typed as arrays, but never crash the page if one is not.
+    const tcpPorts = active.tcp_ports ?? [];
+    const udpPorts = active.udp_ports ?? [];
+    const allowIps = active.allow_ips ?? [];
+    const denyIps = active.deny_ips ?? [];
     const activeKey = JSON.stringify(active);
     const [enabled, setEnabled] = useState(active.enabled);
-    const [tcp, setTcp] = useState(active.tcp_ports.map(String));
-    const [udp, setUdp] = useState(active.udp_ports.map(String));
-    const [allow, setAllow] = useState(active.allow_ips);
-    const [deny, setDeny] = useState(active.deny_ips);
+    const [tcp, setTcp] = useState(tcpPorts.map(String));
+    const [udp, setUdp] = useState(udpPorts.map(String));
+    const [allow, setAllow] = useState(allowIps);
+    const [deny, setDeny] = useState(denyIps);
     const [confirming, setConfirming] = useState(false);
     const [saving, setSaving] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
@@ -208,10 +214,10 @@ function Editor({ active }: { active: Config }) {
     // Re-sync from the server only when the confirmed config actually changes.
     useEffect(() => {
         setEnabled(active.enabled);
-        setTcp(active.tcp_ports.map(String));
-        setUdp(active.udp_ports.map(String));
-        setAllow(active.allow_ips);
-        setDeny(active.deny_ips);
+        setTcp((active.tcp_ports ?? []).map(String));
+        setUdp((active.udp_ports ?? []).map(String));
+        setAllow(active.allow_ips ?? []);
+        setDeny(active.deny_ips ?? []);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeKey]);
 

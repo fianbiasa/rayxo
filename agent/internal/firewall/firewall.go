@@ -69,6 +69,26 @@ type Config struct {
 	DenyIPs  []string `json:"deny_ips"`
 }
 
+// normalized returns the config with every slice non-nil, so it marshals to
+// JSON arrays and never null. The panel's types require arrays, and a nil Go
+// slice would reach it as null and break reading them (e.g. .map()).
+func (c Config) normalized() Config {
+	if c.TCPPorts == nil {
+		c.TCPPorts = []int{}
+	}
+	if c.UDPPorts == nil {
+		c.UDPPorts = []int{}
+	}
+	if c.AllowIPs == nil {
+		c.AllowIPs = []string{}
+	}
+	if c.DenyIPs == nil {
+		c.DenyIPs = []string{}
+	}
+
+	return c
+}
+
 // Trial is a firewall change applied but not yet confirmed; it reverts to the
 // active config when it expires.
 type Trial struct {
@@ -299,9 +319,16 @@ func (m *Manager) finish(ctx context.Context, st state) (Status, error) {
 }
 
 func (m *Manager) statusFor(ctx context.Context, st state) Status {
+	pending := st.Pending
+	if pending != nil {
+		trial := *pending
+		trial.Config = trial.Config.normalized()
+		pending = &trial
+	}
+
 	return Status{
-		Active:        st.Active,
-		Pending:       st.Pending,
+		Active:        st.Active.normalized(),
+		Pending:       pending,
 		AlwaysOpenTCP: m.alwaysOpenTCP(ctx),
 		AlwaysOpenUDP: m.alwaysOpenUDP(),
 		FTPPassive:    fmt.Sprintf("%d-%d", ftpPassiveStart, ftpPassiveEnd),
