@@ -46,7 +46,7 @@ final class FakeAgentClient implements AgentClient
                 : ['enabled' => false, 'versions' => [], 'missing' => [], 'loader' => '', 'simulated' => true],
             'service.status' => $this->serviceReport(),
             'mail.usage' => ['mailboxes' => [], 'simulated' => true],
-            'usage.bandwidth' => ['web' => [], 'mail' => [], 'ftp' => [], 'cursor' => [], 'complete' => true, 'simulated' => true],
+            'usage.bandwidth' => ['web' => [], 'mail' => [], 'mail_user' => [], 'ftp' => [], 'cursor' => [], 'complete' => true, 'simulated' => true],
             'usage.resources' => $this->resourceReport(),
             'backup.inspect' => $this->backupMeta((string) ($params['username'] ?? '')),
             'backup.delete' => ['simulated' => true],

@@ -33,6 +33,18 @@ func newLogs(t *testing.T, budget int64) *logs {
 		FTPLog:    filepath.Join(dir, "transfer.log"),
 		Budget:    budget,
 		Location:  time.UTC,
+		// A stub user database, so the tests never read the host's and a
+		// pickup uid resolves to a known login.
+		LookupID: func(uid string) (string, error) {
+			switch uid {
+			case "1001":
+				return "budi", nil
+			case "1002":
+				return "siti", nil
+			default:
+				return "", os.ErrNotExist
+			}
+		},
 	})
 
 	return &logs{
@@ -117,6 +129,55 @@ func TestCountsWhatWebsitesMailAndFTPMoved(t *testing.T) {
 	again := l.count(report.Cursor)
 	if !reflect.DeepEqual(again.Web, []DomainBytes{{"example.com", "2026-11-12", 900}}) || len(again.Mail) != 0 || len(again.FTP) != 0 {
 		t.Fatalf("the second count read old lines again: %+v", again)
+	}
+}
+
+func TestChargesLocalPickupMailToTheSubmittingLogin(t *testing.T) {
+	l := newLogs(t, 1<<20)
+	l.append(l.mail,
+		// Local pickup mail (PHP mail(), cron) from uid 1001 (budi). The
+		// envelope sender is forged to a victim's domain, but the message
+		// must be charged to budi, not to victim.example.
+		"2026-11-12T10:00:00.000000+00:00 host postfix/pickup[1]: AAA111: uid=1001 from=<forged@victim.example>\n",
+		"2026-11-12T10:00:00.100000+00:00 host postfix/qmgr[2]: AAA111: from=<forged@victim.example>, size=500, nrcpt=1 (queue active)\n",
+		"2026-11-12T10:00:01.000000+00:00 host postfix/smtp[3]: AAA111: to=<out@gmail.com>, relay=gmail[1.2.3.4]:25, delay=1, dsn=2.0.0, status=sent (250 ok)\n",
+		// A multi-recipient local message: every delivered recipient is
+		// charged to the same login (the pickup entry is not consumed on
+		// the first delivery).
+		"2026-11-12T10:01:00.000000+00:00 host postfix/pickup[1]: BBB222: uid=1002 from=<forged2@victim.example>\n",
+		"2026-11-12T10:01:00.100000+00:00 host postfix/qmgr[2]: BBB222: from=<forged2@victim.example>, size=100, nrcpt=2 (queue active)\n",
+		"2026-11-12T10:01:01.000000+00:00 host postfix/smtp[3]: BBB222: to=<a@gmail.com>, relay=gmail[1.2.3.4]:25, delay=1, dsn=2.0.0, status=sent (250 ok)\n",
+		"2026-11-12T10:01:02.000000+00:00 host postfix/smtp[3]: BBB222: to=<b@gmail.com>, relay=gmail[1.2.3.4]:25, delay=1, dsn=2.0.0, status=sent (250 ok)\n",
+		// Authenticated submission (no pickup line): still charged to the
+		// from= domain, which reject_sender_login_mismatch constrains to
+		// the login.
+		"2026-11-12T10:02:00.000000+00:00 host postfix/qmgr[2]: CCC333: from=<news@example.com>, size=700, nrcpt=1 (queue active)\n",
+		"2026-11-12T10:02:01.000000+00:00 host postfix/smtp[3]: CCC333: to=<x@gmail.com>, relay=gmail[1.2.3.4]:25, delay=1, dsn=2.0.0, status=sent (250 ok)\n",
+		// Local delivery (lmtp) is charged to the recipient's domain as
+		// before, even for a pickup message, not to the sender's login.
+		"2026-11-12T10:03:00.000000+00:00 host postfix/pickup[1]: DDD444: uid=1001 from=<forged@victim.example>\n",
+		"2026-11-12T10:03:00.100000+00:00 host postfix/qmgr[2]: DDD444: from=<forged@victim.example>, size=400, nrcpt=1 (queue active)\n",
+		"2026-11-12T10:03:01.000000+00:00 host postfix/lmtp[3]: DDD444: to=<box@example.org>, relay=host[private/dovecot-lmtp], delay=0.1, dsn=2.0.0, status=sent (250 Saved)\n",
+	)
+
+	report := l.count(nil)
+
+	wantUser := []UserBytes{{"budi", "2026-11-12", 500}, {"siti", "2026-11-12", 200}}
+	if !reflect.DeepEqual(report.MailUser, wantUser) {
+		t.Fatalf("mail per login\n got %+v\nwant %+v", report.MailUser, wantUser)
+	}
+
+	// example.com is the authenticated submission; example.org the local
+	// delivery. The forged victim.example is charged nothing.
+	wantDomain := []DomainBytes{{"example.com", "2026-11-12", 700}, {"example.org", "2026-11-12", 400}}
+	if !reflect.DeepEqual(report.Mail, wantDomain) {
+		t.Fatalf("mail per domain\n got %+v\nwant %+v", report.Mail, wantDomain)
+	}
+
+	for _, entry := range report.Mail {
+		if entry.Domain == "victim.example" {
+			t.Fatalf("a forged envelope sender was charged: %+v", report.Mail)
+		}
 	}
 }
 

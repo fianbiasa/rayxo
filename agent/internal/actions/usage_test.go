@@ -62,6 +62,7 @@ func TestUsageBandwidthCountsFromTheCursorItIsGiven(t *testing.T) {
 	counter := &fakeCounter{report: bandwidth.Report{
 		Web:      []bandwidth.DomainBytes{{Domain: "example.com", Date: "2026-11-12", Bytes: 10}},
 		Mail:     []bandwidth.DomainBytes{},
+		MailUser: []bandwidth.UserBytes{},
 		FTP:      []bandwidth.UserBytes{},
 		Cursor:   bandwidth.Cursor{"/var/log/mail.log": {Inode: 7, Offset: 99}},
 		Complete: true,
@@ -76,7 +77,7 @@ func TestUsageBandwidthCountsFromTheCursorItIsGiven(t *testing.T) {
 		t.Fatalf("the counter got %+v", counter.got)
 	}
 
-	want := `{"web":[{"domain":"example.com","date":"2026-11-12","bytes":10}],"mail":[],"ftp":[],"cursor":{"/var/log/mail.log":{"inode":7,"offset":99}},"complete":true}`
+	want := `{"web":[{"domain":"example.com","date":"2026-11-12","bytes":10}],"mail":[],"mail_user":[],"ftp":[],"cursor":{"/var/log/mail.log":{"inode":7,"offset":99}},"complete":true}`
 	if string(result) != want {
 		t.Fatalf("unexpected result %s", result)
 	}

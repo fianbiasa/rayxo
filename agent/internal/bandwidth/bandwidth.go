@@ -17,11 +17,13 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -41,6 +43,11 @@ type Config struct {
 	Budget int64
 	// Location is the time zone dates are counted in; nil is the server's.
 	Location *time.Location
+	// LookupID resolves a Unix user id (as a decimal string) to its login
+	// name, for attributing locally submitted mail to the account that
+	// sent it. nil uses the host's user database (os/user.LookupId); a
+	// test stubs it.
+	LookupID func(uid string) (string, error)
 }
 
 // DefaultConfig returns the logs' locations on a RAYXO server.
@@ -70,7 +77,8 @@ type DomainBytes struct {
 	Bytes  int64  `json:"bytes"`
 }
 
-// UserBytes is the traffic of one FTP login on one day.
+// UserBytes is the traffic of one Unix login on one day: an FTP login, or
+// the account that submitted mail locally.
 type UserBytes struct {
 	User  string `json:"user"`
 	Date  string `json:"date"`
@@ -83,6 +91,7 @@ type UserBytes struct {
 type Report struct {
 	Web      []DomainBytes `json:"web"`
 	Mail     []DomainBytes `json:"mail"`
+	MailUser []UserBytes   `json:"mail_user"`
 	FTP      []UserBytes   `json:"ftp"`
 	Cursor   Cursor        `json:"cursor"`
 	Complete bool          `json:"complete"`
@@ -90,7 +99,13 @@ type Report struct {
 
 // Counter counts traffic from the logs in its Config.
 type Counter struct {
-	cfg Config
+	cfg      Config
+	lookupID func(uid string) (string, error)
+	// users caches resolved uid→login names. The counter is long-lived, so
+	// a uid is looked up on the host at most once; mu guards the cache in
+	// case counts ever run at the same time.
+	mu    sync.Mutex
+	users map[string]string
 }
 
 // New returns a Counter for cfg.
@@ -103,7 +118,40 @@ func New(cfg Config) *Counter {
 		cfg.Budget = DefaultConfig().Budget
 	}
 
-	return &Counter{cfg: cfg}
+	lookupID := cfg.LookupID
+	if lookupID == nil {
+		lookupID = func(uid string) (string, error) {
+			u, err := user.LookupId(uid)
+			if err != nil {
+				return "", err
+			}
+
+			return u.Username, nil
+		}
+	}
+
+	return &Counter{cfg: cfg, lookupID: lookupID, users: map[string]string{}}
+}
+
+// resolveUID returns the login name of a Unix user id, or "" when it
+// cannot be resolved. Only successful lookups are cached, so an account
+// created after a failed lookup is still found on the next count.
+func (c *Counter) resolveUID(uid string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if name, ok := c.users[uid]; ok {
+		return name
+	}
+
+	name, err := c.lookupID(uid)
+	if err != nil {
+		return ""
+	}
+
+	c.users[uid] = name
+
+	return name
 }
 
 // maxLine is the longest log line counted; longer ones are skipped.
@@ -136,7 +184,7 @@ func (c *Counter) Count(cursor Cursor) (Report, error) {
 	budget := c.cfg.Budget
 	next := Cursor{}
 	complete := true
-	web, mail, ftp := tally{}, tally{}, tally{}
+	web, mail, mailUser, ftp := tally{}, tally{}, tally{}, tally{}
 
 	logs, err := filepath.Glob(filepath.Join(c.cfg.WebLogDir, "*.access.log"))
 	if err != nil {
@@ -164,10 +212,15 @@ func (c *Counter) Count(cursor Cursor) (Report, error) {
 	}
 
 	queued := map[string]queuedMessage{}
+	pickup := map[string]string{}
 
 	done, err := c.follow(c.cfg.MailLog, cursor, next, &budget, func(line []byte) {
-		if domain, date, bytes, ok := c.parseMail(line, queued); ok {
-			mail.add(domain, date, bytes)
+		if name, date, bytes, isUser, ok := c.parseMail(line, queued, pickup); ok {
+			if isUser {
+				mailUser.add(name, date, bytes)
+			} else {
+				mail.add(name, date, bytes)
+			}
 		}
 	})
 	if err != nil {
@@ -188,6 +241,7 @@ func (c *Counter) Count(cursor Cursor) (Report, error) {
 	return Report{
 		Web:      domainBytes(web),
 		Mail:     domainBytes(mail),
+		MailUser: userBytes(mailUser),
 		FTP:      userBytes(ftp),
 		Cursor:   next,
 		Complete: complete && done,
@@ -342,34 +396,45 @@ type queuedMessage struct {
 }
 
 var (
-	mailLine  = regexp.MustCompile(`^(\S+) \S+ postfix/(qmgr|smtp|lmtp)\[\d+\]: ([0-9A-Za-z]+): (.*)$`)
-	queueFrom = regexp.MustCompile(`^from=<([^>]*)>, size=(\d+), nrcpt=`)
-	deliverTo = regexp.MustCompile(`^to=<([^>]+)>,.* status=sent\b`)
+	mailLine   = regexp.MustCompile(`^(\S+) \S+ postfix/(qmgr|smtp|lmtp|pickup)\[\d+\]: ([0-9A-Za-z]+): (.*)$`)
+	queueFrom  = regexp.MustCompile(`^from=<([^>]*)>, size=(\d+), nrcpt=`)
+	pickupFrom = regexp.MustCompile(`^uid=(\d+)\b`)
+	deliverTo  = regexp.MustCompile(`^to=<([^>]+)>,.* status=sent\b`)
 )
 
-// parseMail counts a message once for every recipient it was delivered
-// to: to the domain of the recipient for mail delivered to a mailbox
-// here (lmtp), and to the domain of the sender for mail sent to another
-// server (smtp). The sizes come from the queue manager's lines, which
-// come first; queued remembers them.
-func (c *Counter) parseMail(line []byte, queued map[string]queuedMessage) (string, string, int64, bool) {
+// parseMail counts a message once for every recipient it was delivered to.
+// It returns a name that is either a domain (isUser false) or a Unix login
+// (isUser true):
+//
+//   - lmtp, a delivery to a mailbox here, is charged to the recipient's
+//     domain;
+//   - smtp, a message sent to another server, is charged to the login that
+//     submitted it locally (pickup) when it is known, since a local script
+//     can forge the envelope sender; otherwise, for authenticated
+//     submission, to the sender's domain, which the login maps are tied to.
+//
+// The sizes come from the queue manager's lines and the submitting uid from
+// the pickup lines, both of which come before the delivery lines; queued
+// and pickup remember them.
+func (c *Counter) parseMail(line []byte, queued map[string]queuedMessage, pickup map[string]string) (string, string, int64, bool, bool) {
 	match := mailLine.FindSubmatch(line)
 	if match == nil {
-		return "", "", 0, false
+		return "", "", 0, false, false
 	}
 
 	id := string(match[3])
 	rest := match[4]
 
-	if string(match[2]) == "qmgr" {
+	switch string(match[2]) {
+	case "qmgr":
 		from := queueFrom.FindSubmatch(rest)
 		if from == nil {
-			return "", "", 0, false
+			return "", "", 0, false, false
 		}
 
 		size, err := strconv.ParseInt(string(from[2]), 10, 64)
 		if err != nil {
-			return "", "", 0, false
+			return "", "", 0, false, false
 		}
 
 		if len(queued) >= maxQueued {
@@ -378,32 +443,62 @@ func (c *Counter) parseMail(line []byte, queued map[string]queuedMessage) (strin
 
 		queued[id] = queuedMessage{sender: string(from[1]), size: size}
 
-		return "", "", 0, false
+		return "", "", 0, false, false
+	case "pickup":
+		from := pickupFrom.FindSubmatch(rest)
+		if from == nil {
+			return "", "", 0, false, false
+		}
+
+		if len(pickup) >= maxQueued {
+			clear(pickup)
+		}
+
+		// The login, "" when the uid resolves to no user. Either way the
+		// message is marked as locally submitted so its forgeable envelope
+		// sender is never charged; the entry is kept (not deleted on the
+		// first delivery) so every recipient of a multi-recipient message
+		// is attributed to the same login.
+		pickup[id] = c.resolveUID(string(from[1]))
+
+		return "", "", 0, false, false
 	}
 
 	to := deliverTo.FindSubmatch(rest)
 	message, ok := queued[id]
 
 	if to == nil || !ok {
-		return "", "", 0, false
-	}
-
-	address := string(to[1])
-	if string(match[2]) == "smtp" {
-		address = message.sender
-	}
-
-	domain := domainOf(address)
-	if domain == "" {
-		return "", "", 0, false
+		return "", "", 0, false, false
 	}
 
 	date, ok := c.date(time.RFC3339Nano, string(match[1]))
 	if !ok {
-		return "", "", 0, false
+		return "", "", 0, false, false
 	}
 
-	return domain, date, message.size, true
+	if string(match[2]) == "smtp" {
+		if login, local := pickup[id]; local {
+			if login == "" {
+				return "", "", 0, false, false
+			}
+
+			return login, date, message.size, true, true
+		}
+
+		domain := domainOf(message.sender)
+		if domain == "" {
+			return "", "", 0, false, false
+		}
+
+		return domain, date, message.size, false, true
+	}
+
+	domain := domainOf(string(to[1]))
+	if domain == "" {
+		return "", "", 0, false, false
+	}
+
+	return domain, date, message.size, false, true
 }
 
 // ftpLine is a line of Pure-FTPd's transfer log in common log format: the
