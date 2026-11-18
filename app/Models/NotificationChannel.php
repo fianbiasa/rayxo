@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
  * @property string $target The address, or the Telegram chat id.
  * @property list<string> $events
  * @property bool $enabled
+ * @property Carbon|null $verified_at When the target proved it is read, or null.
  * @property Carbon|null $last_sent_at
  * @property string|null $last_error Why the last alert could not be sent.
  * @property Carbon|null $created_at
@@ -42,8 +43,18 @@ class NotificationChannel extends Model
         return [
             'events' => 'array',
             'enabled' => 'boolean',
+            'verified_at' => 'datetime',
             'last_sent_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Whether the target has confirmed a code sent to it. Alerts go only to
+     * a verified target.
+     */
+    public function isVerified(): bool
+    {
+        return $this->verified_at !== null;
     }
 
     /**

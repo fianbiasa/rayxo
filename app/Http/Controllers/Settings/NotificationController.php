@@ -10,6 +10,7 @@ use App\Support\NotificationEvents;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -75,6 +76,47 @@ class NotificationController extends Controller
     }
 
     /**
+     * Confirm the target with the code that was sent to it, so alerts may go
+     * out to it.
+     */
+    public function verify(Request $request, string $type): RedirectResponse
+    {
+        $channel = $request->user()->notificationChannels()->where('type', $type)->firstOrFail();
+
+        $validated = $request->validate([
+            'code' => ['required', 'string', 'max:16'],
+        ]);
+
+        if (! $this->notifications->confirm($channel, trim((string) $validated['code']), $request->user())) {
+            throw ValidationException::withMessages([
+                'code' => __('This code is wrong or has expired. Ask for a new one.'),
+            ]);
+        }
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('The target is verified. Alerts can be sent to it now.')]);
+
+        return back();
+    }
+
+    /**
+     * Send a fresh verification code to an unverified target.
+     */
+    public function resendVerification(Request $request, string $type): RedirectResponse
+    {
+        $channel = $request->user()->notificationChannels()->where('type', $type)->firstOrFail();
+
+        if ($channel->isVerified()) {
+            return back();
+        }
+
+        $this->notifications->issueChallenge($channel);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('A new code is on its way to :target.', ['target' => $channel->target])]);
+
+        return back();
+    }
+
+    /**
      * Send a test alert now, through the saved channel.
      */
     public function test(Request $request, string $type): RedirectResponse
@@ -91,7 +133,7 @@ class NotificationController extends Controller
     }
 
     /**
-     * @return array{target: string, events: list<string>, enabled: bool, last_sent_at: string|null, last_error: string|null}
+     * @return array{target: string, events: list<string>, enabled: bool, verified: bool, last_sent_at: string|null, last_error: string|null}
      */
     private function channelData(NotificationChannel $channel): array
     {
@@ -99,6 +141,7 @@ class NotificationController extends Controller
             'target' => $channel->target,
             'events' => $channel->events,
             'enabled' => $channel->enabled,
+            'verified' => $channel->isVerified(),
             'last_sent_at' => $channel->last_sent_at?->toIso8601String(),
             'last_error' => $channel->last_error,
         ];

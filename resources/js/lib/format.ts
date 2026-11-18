@@ -161,6 +161,7 @@ export const auditActionLabels: Record<string, string> = {
     'login_key.deleted': 'Login key dihapus',
     'notification.channel_saved': 'Pengaturan notifikasi disimpan',
     'notification.channel_removed': 'Saluran notifikasi dihapus',
+    'notification.channel_verified': 'Target notifikasi diverifikasi',
     'server.telegram_bot_set': 'Bot Telegram dipasang',
     'server.telegram_bot_removed': 'Bot Telegram dilepas',
     'ticket.opened': 'Tiket dibuat',

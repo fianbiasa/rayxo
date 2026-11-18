@@ -1,5 +1,12 @@
 import { Form, Head, router } from '@inertiajs/react';
-import { Bell, Mail, Send, Trash2 } from 'lucide-react';
+import {
+    Bell,
+    Mail,
+    Send,
+    ShieldAlert,
+    ShieldCheck,
+    Trash2,
+} from 'lucide-react';
 import { useState } from 'react';
 import InputError from '@/components/input-error';
 import SettingsCard from '@/components/settings-card';
@@ -9,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { formatRelative } from '@/lib/format';
-import { destroy, test, update } from '@/routes/notifications';
+import { destroy, resend, test, update, verify } from '@/routes/notifications';
 
 type ChannelType = 'email' | 'telegram';
 
@@ -17,6 +24,7 @@ type Channel = {
     target: string;
     events: string[];
     enabled: boolean;
+    verified: boolean;
     last_sent_at: string | null;
     last_error: string | null;
 };
@@ -166,6 +174,8 @@ function ChannelCard({
 
     return (
         <SettingsCard icon={icon} title={title} description={description}>
+            {channel !== null && <Verification type={type} channel={channel} />}
+
             <Form
                 {...update.form(type)}
                 options={{ preserveScroll: true }}
@@ -297,5 +307,90 @@ function ChannelCard({
                 )}
             </Form>
         </SettingsCard>
+    );
+}
+
+function Verification({
+    type,
+    channel,
+}: {
+    type: ChannelType;
+    channel: Channel;
+}) {
+    const [resending, setResending] = useState(false);
+
+    if (channel.verified) {
+        return (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <ShieldCheck className="size-4 text-emerald-600 dark:text-emerald-500" />
+                Target sudah terverifikasi.
+            </p>
+        );
+    }
+
+    return (
+        <div className="grid gap-3 rounded-xl border border-amber-500/40 bg-amber-50 p-4 dark:bg-amber-950/20">
+            <p className="flex items-start gap-2 text-sm">
+                <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
+                <span>
+                    Target belum terverifikasi, jadi notifikasi belum dikirim ke
+                    sana. Masukkan kode yang kami kirim ke{' '}
+                    <span className="font-medium">{channel.target}</span>.
+                </span>
+            </p>
+
+            <Form
+                {...verify.form(type)}
+                options={{ preserveScroll: true }}
+                resetOnSuccess
+                className="flex flex-wrap items-start gap-2"
+            >
+                {({ processing, errors }) => (
+                    <>
+                        <div className="grid gap-1.5">
+                            <Label htmlFor={`${type}-code`} className="sr-only">
+                                Kode verifikasi
+                            </Label>
+                            <Input
+                                id={`${type}-code`}
+                                name="code"
+                                inputMode="numeric"
+                                autoComplete="one-time-code"
+                                required
+                                placeholder="Kode 6 digit"
+                                className="w-40"
+                                aria-invalid={errors.code ? true : undefined}
+                            />
+                            <InputError message={errors.code} />
+                        </div>
+
+                        <Button type="submit" disabled={processing}>
+                            {processing ? <Spinner /> : <ShieldCheck />}
+                            Verifikasi
+                        </Button>
+
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={resending}
+                            onClick={() =>
+                                router.post(
+                                    resend.url(type),
+                                    {},
+                                    {
+                                        preserveScroll: true,
+                                        onStart: () => setResending(true),
+                                        onFinish: () => setResending(false),
+                                    },
+                                )
+                            }
+                        >
+                            {resending ? <Spinner /> : <Send />}
+                            Kirim ulang kode
+                        </Button>
+                    </>
+                )}
+            </Form>
+        </div>
     );
 }
