@@ -67,8 +67,11 @@ func TestAnAccountCannotReadAnotherAccountsFiles(t *testing.T) {
 	t.Run("through the other account's PHP-FPM socket", s.throughPHPSocket)
 	t.Run("through the panel's PHP-FPM pool", s.throughPanelPool)
 	t.Run("through .htaccess PHP setting injection", s.throughIniInjection)
+	t.Run("through Apache expressions in .htaccess", s.throughApacheExpressions)
 	t.Run("a normal app .htaccess still works", s.legitHtaccess)
+	t.Run("a migrated site's .htaccess still works", s.migratedHtaccess)
 	t.Run("the pool owner cannot be forged from .htaccess", s.guardOwnerCannotBeForged)
+	t.Run("hidden files are never served", s.hiddenFiles)
 	t.Run("through the file manager", s.throughFileManager)
 	t.Run("through a symlinked document root", s.throughDocumentRootSymlink)
 	t.Run("a home opened to others would be caught", s.openedHomeIsCaught)
@@ -296,22 +299,71 @@ func (s *server) throughPanelPool(t *testing.T) {
 // .htaccess, which together with allow_url_include would let a prepended file
 // run code outside the home. The pool fixes open_basedir as a non-overridable
 // admin value, and Apache strips PHP_VALUE/PHP_ADMIN_VALUE from every proxied
-// request, so a mod_rewrite [E=] must not change it.
+// request, so no way of setting an environment variable from .htaccess
+// (mod_rewrite [E=], SetEnv, SetEnvIf) may change it.
 func (s *server) throughIniInjection(t *testing.T) {
 	inject := mkdirAs(t, s.a, filepath.Join(s.a.docroot(), "inject"))
-	writeAs(t, s.a, filepath.Join(inject, ".htaccess"), "RewriteEngine On\nRewriteRule ^basedir\\.php$ - [E=PHP_ADMIN_VALUE:open_basedir=/]\n")
 	writeAs(t, s.a, filepath.Join(inject, "basedir.php"), "<?php echo 'BASEDIR:', ini_get('open_basedir');\n")
 
-	status, body := get(t, s.a.domain, "/inject/basedir.php")
-	if !strings.HasPrefix(body, "BASEDIR:") {
-		t.Fatalf("GET /inject/basedir.php (%d): the probe did not run: %q", status, excerpt(body))
+	for _, route := range []struct{ how, htaccess string }{
+		{"RewriteRule [E=]", "RewriteEngine On\nRewriteRule ^basedir\\.php$ - [E=PHP_ADMIN_VALUE:open_basedir=/]\n"},
+		{"SetEnv", "SetEnv PHP_ADMIN_VALUE \"open_basedir=/\"\n"},
+		{"SetEnvIf", "SetEnvIf Request_URI \"basedir\\.php$\" PHP_ADMIN_VALUE=open_basedir=/\n"},
+	} {
+		writeAs(t, s.a, filepath.Join(inject, ".htaccess"), route.htaccess)
+
+		status, body := get(t, s.a.domain, "/inject/basedir.php")
+		if !strings.HasPrefix(body, "BASEDIR:") {
+			t.Errorf("%s: GET /inject/basedir.php (%d): the probe did not run, so the directive was refused: %q", route.how, status, excerpt(body))
+
+			continue
+		}
+
+		if basedir := strings.TrimPrefix(body, "BASEDIR:"); !strings.Contains(basedir, s.a.Home) {
+			t.Errorf("%s: GET /inject/basedir.php (%d): .htaccess widened open_basedir to %q (expected to contain the home %q)", route.how, status, basedir, s.a.Home)
+		} else {
+			t.Logf("open_basedir after %s injection: %q", route.how, basedir)
+		}
+	}
+}
+
+// throughApacheExpressions tries to have Apache itself read the victim's file
+// for the attacker. Apache serves every account's website, so it can read
+// them all, and its expressions have a file() function; ErrorDocument, Header
+// and <If> all take expressions in .htaccess. A leak would show the secret in
+// the response, and the <If> probe would answer whether the file matches.
+func (s *server) throughApacheExpressions(t *testing.T) {
+	secret := filepath.Join(s.b.docroot(), "secret.txt")
+	probe := mkdirAs(t, s.a, filepath.Join(s.a.docroot(), "expr"))
+
+	for _, route := range []struct{ how, htaccess string }{
+		{"ErrorDocument", fmt.Sprintf("ErrorDocument 404 \"%%{file:%s}\"\n", secret)},
+		{"Header expr=", fmt.Sprintf("Header always set X-Probe \"expr=%%{file:%s}\"\n", secret)},
+		{"<If> file()", fmt.Sprintf("<If \"file('%s') =~ /rayxo-isolation-/\">\n    Header always set X-Probe matched\n</If>\n", secret)},
+	} {
+		writeAs(t, s.a, filepath.Join(probe, ".htaccess"), route.htaccess)
+
+		status, header, body := request(t, s.a.domain, "/expr/missing")
+		s.refute(t, fmt.Sprintf("%s: GET /expr/missing (%d)", route.how, status), fmt.Sprintf("%v\n%s", header, body))
+
+		if header.Get("X-Probe") == "matched" {
+			t.Errorf("%s: GET /expr/missing (%d): Apache told the attacker what %s holds", route.how, status, secret)
+		}
+		t.Logf("%s: %d, X-Probe %q, Apache: %s", route.how, status, header.Get("X-Probe"), lastApacheError(s.a.domain))
+	}
+}
+
+// lastApacheError is the last line of the website's Apache error log, which
+// says why Apache refused a request.
+func lastApacheError(domain string) string {
+	content, err := os.ReadFile(filepath.Join("/var/log/rayxo/domains", domain+".apache-error.log"))
+	if err != nil {
+		return err.Error()
 	}
 
-	if basedir := strings.TrimPrefix(body, "BASEDIR:"); !strings.Contains(basedir, s.a.Home) {
-		t.Errorf("GET /inject/basedir.php (%d): .htaccess widened open_basedir to %q (expected to contain the home %q)", status, basedir, s.a.Home)
-	} else {
-		t.Logf("open_basedir after [E=] injection: %q", basedir)
-	}
+	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
+
+	return lines[len(lines)-1]
 }
 
 // legitHtaccess checks that a normal app .htaccess — the directives WordPress,
@@ -347,6 +399,60 @@ func (s *server) legitHtaccess(t *testing.T) {
 	}
 }
 
+// migratedHtaccess checks the .htaccess lines sites bring along from
+// DirectAdmin and cPanel, which allow FileInfo in full: environment variables
+// (the Authorization header for APIs, no-gzip for images), mod_alias
+// redirects and output filters. Apache answers 500 for the whole folder when
+// one of them is not allowed.
+func (s *server) migratedHtaccess(t *testing.T) {
+	site := mkdirAs(t, s.a, filepath.Join(s.a.docroot(), "migrated"))
+	htaccess := strings.Join([]string{
+		`SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1`,
+		`SetEnvIfNoCase Request_URI "env\.php$" RAYXO_SETENVIF=yes`,
+		`SetEnvIfNoCase Request_URI \.(?:gif|jpe?g|png)$ no-gzip dont-vary`,
+		"BrowserMatch ^Mozilla/4 gzip-only-text/html",
+		"BrowserMatchNoCase MSIE force-no-vary",
+		"SetEnv RAYXO_SETENV yes",
+		"UnsetEnv RAYXO_NOTHING",
+		"<IfModule mod_deflate.c>",
+		"    AddOutputFilter DEFLATE html",
+		"    SetOutputFilter DEFLATE",
+		"</IfModule>",
+		"ExpiresActive On",
+		`ExpiresByType text/html "access plus 1 hour"`,
+		"Redirect 301 /migrated/old.html /migrated/new.html",
+		"RedirectPermanent /migrated/permanent.html /migrated/new.html",
+		"RedirectMatch 302 ^/migrated/legacy/(.*)$ /migrated/$1",
+	}, "\n") + "\n"
+	writeAs(t, s.a, filepath.Join(site, ".htaccess"), htaccess)
+	writeAs(t, s.a, filepath.Join(site, "env.php"), "<?php echo 'setenv=', $_SERVER['RAYXO_SETENV'] ?? '', ' setenvif=', $_SERVER['RAYXO_SETENVIF'] ?? '';\n")
+
+	status, header, body := request(t, s.a.domain, "/migrated/env.php")
+	if status != http.StatusOK || body != "setenv=yes setenvif=yes" {
+		t.Errorf("GET /migrated/env.php => %d %q (want 200 \"setenv=yes setenvif=yes\")", status, excerpt(body))
+	}
+
+	// ExpiresActive outside <IfModule> needs mod_expires on.
+	if cache := header.Get("Cache-Control"); !strings.Contains(cache, "max-age=3600") {
+		t.Errorf("GET /migrated/env.php: Cache-Control %q, want max-age=3600 from ExpiresByType", cache)
+	}
+
+	for _, redirect := range []struct {
+		path   string
+		status int
+		to     string
+	}{
+		{"/migrated/old.html", http.StatusMovedPermanently, "/migrated/new.html"},
+		{"/migrated/permanent.html", http.StatusMovedPermanently, "/migrated/new.html"},
+		{"/migrated/legacy/page.html", http.StatusFound, "/migrated/page.html"},
+	} {
+		status, header, body := request(t, s.a.domain, redirect.path)
+		if status != redirect.status || !strings.HasSuffix(header.Get("Location"), redirect.to) {
+			t.Errorf("GET %s => %d to %q (want %d to %s): %q", redirect.path, status, header.Get("Location"), redirect.status, redirect.to, excerpt(body))
+		}
+	}
+}
+
 // guardOwnerCannotBeForged proves the per-pool guard cannot be fooled: a
 // request routed to another account's pool carries the requesting account's
 // RAYXO_POOL_OWNER, which that account's own Apache vhost forces after
@@ -357,13 +463,49 @@ func (s *server) legitHtaccess(t *testing.T) {
 // guard would reject it).
 func (s *server) guardOwnerCannotBeForged(t *testing.T) {
 	forge := mkdirAs(t, s.a, filepath.Join(s.a.docroot(), "forge"))
-	writeAs(t, s.a, filepath.Join(forge, ".htaccess"),
-		"RewriteEngine On\nRewriteRule ^who\\.php$ - [E=RAYXO_POOL_OWNER:"+s.b.Username+"]\n")
 	writeAs(t, s.a, filepath.Join(forge, "who.php"), "<?php echo 'OK';\n")
 
-	status, body := get(t, s.a.domain, "/forge/who.php")
-	if status != http.StatusOK || body != "OK" {
-		t.Errorf("GET /forge/who.php => %d %q: the vhost must force RAYXO_POOL_OWNER so .htaccess cannot forge it (want 200 \"OK\")", status, body)
+	for _, route := range []struct{ how, htaccess string }{
+		{"RewriteRule [E=]", "RewriteEngine On\nRewriteRule ^who\\.php$ - [E=RAYXO_POOL_OWNER:" + s.b.Username + "]\n"},
+		{"SetEnv", "SetEnv RAYXO_POOL_OWNER " + s.b.Username + "\n"},
+	} {
+		writeAs(t, s.a, filepath.Join(forge, ".htaccess"), route.htaccess)
+
+		status, body := get(t, s.a.domain, "/forge/who.php")
+		if status != http.StatusOK || body != "OK" {
+			t.Errorf("%s: GET /forge/who.php => %d %q: the vhost must force RAYXO_POOL_OWNER so .htaccess cannot forge it (want 200 \"OK\")", route.how, status, excerpt(body))
+		}
+	}
+}
+
+// hiddenFiles checks that a website never serves a hidden file or folder,
+// whatever its .htaccess says: an app's .env with its database password, a
+// .git checkout, a dump or archive kept in a hidden folder (archives are
+// static files Nginx would otherwise send straight from disk). /.well-known/
+// stays public, for app links, security.txt and the like.
+func (s *server) hiddenFiles(t *testing.T) {
+	docroot := s.a.docroot()
+	writeAs(t, s.a, filepath.Join(docroot, ".env"), "APP_KEY="+s.secret+"\n")
+	git := mkdirAs(t, s.a, filepath.Join(docroot, ".git"))
+	writeAs(t, s.a, filepath.Join(git, "config"), "[core] "+s.secret+"\n")
+	private := mkdirAs(t, s.a, filepath.Join(docroot, ".private"))
+	writeAs(t, s.a, filepath.Join(private, "backup.zip"), s.secret)
+	writeAs(t, s.a, filepath.Join(private, "dump.sql"), s.secret)
+
+	for _, path := range []string{"/.env", "/.git/config", "/.private/backup.zip", "/.private/dump.sql"} {
+		if status, body := get(t, s.a.domain, path); strings.Contains(body, s.secret) {
+			t.Errorf("GET %s (%d) served a hidden file: %q", path, status, excerpt(body))
+		}
+	}
+
+	wellKnown := filepath.Join(docroot, ".well-known")
+	if _, err := os.Stat(wellKnown); os.IsNotExist(err) {
+		mkdirAs(t, s.a, wellKnown)
+	}
+	writeAs(t, s.a, filepath.Join(wellKnown, "rayxo-check.txt"), "well-known-ok")
+
+	if status, body := get(t, s.a.domain, "/.well-known/rayxo-check.txt"); status != http.StatusOK || body != "well-known-ok" {
+		t.Errorf("GET /.well-known/rayxo-check.txt => %d %q (want 200 \"well-known-ok\")", status, excerpt(body))
 	}
 }
 
@@ -574,6 +716,15 @@ func runAs(t *testing.T, as account, name string, args ...string) string {
 func get(t *testing.T, domain, path string) (int, string) {
 	t.Helper()
 
+	status, _, body := request(t, domain, path)
+
+	return status, body
+}
+
+// request is get with the response headers too.
+func request(t *testing.T, domain, path string) (int, http.Header, string) {
+	t.Helper()
+
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
@@ -599,7 +750,7 @@ func get(t *testing.T, domain, path string) (int, string) {
 		t.Fatalf("GET %s%s: %v", domain, path, err)
 	}
 
-	return response.StatusCode, strings.TrimSpace(string(body))
+	return response.StatusCode, response.Header, strings.TrimSpace(string(body))
 }
 
 // writeAs writes a file the way the account's own upload would.

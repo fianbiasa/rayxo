@@ -372,7 +372,7 @@ func TestRenderedNginxVhost(t *testing.T) {
 		"disable_symlinks if_not_owner;",
 		"client_max_body_size 256m;",
 		"include "+env.cfg.NginxDir+"/budi/suspended*.inc;",
-		"location ~ /\\.(?:ht|ftpquota$) {\n        deny all;\n    }",
+		"location ~ /\\.(?!well-known(?:/|$)) {\n        deny all;\n    }",
 		"|webp|avif|svg|ico|bmp|woff|woff2|ttf|otf|eot|mp4|webm|ogg|mp3|wav|pdf|txt|zip|gz|tgz|rar|7z)$ {\n        try_files $uri @apache;\n    }",
 		"location / {\n        proxy_pass http://127.0.0.1:8080;",
 		"location @apache {\n        proxy_pass http://127.0.0.1:8080;",

@@ -3123,8 +3123,10 @@ CONF
         '# Managed by rayxo setup.sh: suEXEC document root, and no userdir.' \
         >/etc/apache2/suexec/www-data
 
+    # expires: sites moved from other panels often set ExpiresActive in their
+    # .htaccess without <IfModule>, which is a 500 when the module is off.
     quietly a2dismod -q mpm_prefork mpm_worker
-    quietly a2enmod -q mpm_event proxy_fcgi remoteip rewrite headers setenvif cgid suexec
+    quietly a2enmod -q mpm_event proxy_fcgi remoteip rewrite headers expires setenvif cgid suexec
     quietly a2enconf -q rayxo
 
     {

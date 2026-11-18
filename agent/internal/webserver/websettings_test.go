@@ -93,10 +93,10 @@ func TestProtectedDirectoriesAskForALoginInBothWebServers(t *testing.T) {
 
 	nginx := env.read(env.nginxVhost("budi", "example.com"))
 
-	// After Apache's own files, which stay refused, and before the static
+	// After the hidden files, which stay refused, and before the static
 	// files, which would otherwise be served without a login.
 	assertInOrder(t, nginx,
-		"location ~ /\\.(?:ht|ftpquota$) {",
+		"location ~ /\\.(?!well-known(?:/|$)) {",
 		"    # /admin.v2 and everything in it ask for a username and password.\n"+
 			"    location ~ ^/admin\\.v2(?:/|$) {\n"+
 			"        auth_basic \"Admin area\";\n"+
@@ -204,7 +204,7 @@ func TestRenderedHotlinkProtection(t *testing.T) {
 	)
 
 	// Checked before any location, so no location can serve the file.
-	assertInOrder(t, nginx, "suspended*.inc;", "valid_referers", "location ~ /\\.(?:ht|ftpquota$)")
+	assertInOrder(t, nginx, "suspended*.inc;", "valid_referers", "location ~ /\\.(?!well-known(?:/|$))")
 
 	site.Hotlink = &Hotlink{Extensions: []string{"mp4"}, RedirectTo: "https://cdn.example.net/blocked.png"}
 	env.mustApply(site)
@@ -297,7 +297,7 @@ func TestASuspendedWebsiteShowsTheUnavailablePage(t *testing.T) {
 		"    default_type text/html;\n    return 503 '<!doctype html>",
 		"temporarily unavailable",
 		"</html>';\n",
-		"location ~ /\\.(?:ht|ftpquota$)",
+		"location ~ /\\.(?!well-known(?:/|$))",
 	)
 
 	if err := env.manager.SuspendAccount(context.Background(), "budi"); err != nil {

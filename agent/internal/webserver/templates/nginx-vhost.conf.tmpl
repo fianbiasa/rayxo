@@ -141,8 +141,12 @@ server {
     }
 {{- end}}
 
-    # Apache's own files, and the usage Pure-FTPd keeps for an FTP quota.
-    location ~ /\.(?:ht|ftpquota$) {
+    # Hidden files and folders are never served, whatever the website's
+    # .htaccess says (Nginx sends static files without asking Apache): an
+    # app's .env with its passwords, a .git checkout, .htaccess and .user.ini,
+    # Pure-FTPd's .ftpquota, a backup kept in a hidden folder. Only
+    # /.well-known/ stays public, for app links, security.txt and the like.
+    location ~ /\.(?!well-known(?:/|$)) {
         deny all;
     }
 {{- range .Protected}}
