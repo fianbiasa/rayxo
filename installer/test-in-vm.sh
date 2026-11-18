@@ -324,5 +324,18 @@ fail2ban-client get postfix-sasl journalmatch | grep -q "postfix@-.service" \
 echo "    fail2ban active; jails: $jails"
 ' || die "fail2ban is not set up as expected"
 
+# nftables is installed, but the managed firewall is off on a fresh install:
+# no inet rayxo table exists until the admin turns it on from the panel.
+step "nftables is installed and the managed firewall is off by default"
+as_root bash -c '
+set -e
+command -v nft >/dev/null || { echo "nft is not installed"; exit 1; }
+if nft list table inet rayxo >/dev/null 2>&1; then
+    echo "the managed firewall (inet rayxo) should be off on a fresh install"
+    exit 1
+fi
+echo "    nft installed; inet rayxo absent (firewall off)"
+' || die "the firewall default is not as expected"
+
 passed=1
 step "Passed: a clean install works end to end"

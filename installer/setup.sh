@@ -1189,6 +1189,11 @@ DEBCONF
     # nftables table, so it works whether the managed firewall is on or not.
     quietly "${apt[@]}" install fail2ban
 
+    # nftables is the firewall the agent manages (table inet rayxo); the panel
+    # turns it on. Only the tool is installed here — the firewall stays off
+    # until the admin enables it, so a fresh install never blocks a port.
+    quietly "${apt[@]}" install nftables
+
     # GoAccess makes the visitor reports of websites (the agent's stats.report).
     quietly "${apt[@]}" install --no-install-recommends goaccess
 
