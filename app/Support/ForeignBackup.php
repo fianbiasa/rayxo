@@ -222,6 +222,30 @@ abstract class ForeignBackup
     }
 
     /**
+     * Notes added to the plan's once the backup is converted, for the home
+     * entries the agent left out because their names could lead out of the
+     * home (not valid UTF-8, a traversal, or absolute). The names come quoted
+     * from the agent so odd bytes are safe to show; the count may be higher
+     * than the names listed.
+     *
+     * @param  array<string, mixed>  $converted  The agent's backup.import_convert result.
+     * @return list<string>
+     */
+    public static function droppedNotes(array $converted): array
+    {
+        $count = (int) ($converted['refused'] ?? 0);
+
+        if ($count < 1) {
+            return [];
+        }
+
+        $names = array_values(array_filter((array) ($converted['refused_names'] ?? []), 'is_string'));
+        $list = implode(', ', array_slice($names, 0, 5)).($count > 5 ? ', …' : '');
+
+        return [self::note('Some files of the home were left out because their names cannot be used here: :names.', ['names' => $list])];
+    }
+
+    /**
      * Where the folder of each website goes. A folder two websites share
      * goes to the first. Also returns each folder's full path then and now.
      *

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"testing"
 )
 
@@ -133,6 +134,11 @@ func TestExtractRefusesEntriesThatLeaveTheFolder(t *testing.T) {
 
 	if result.Refused != 3 || result.Files != 3 {
 		t.Fatalf("extract = %+v", result)
+	}
+
+	wantRefused := []string{strconv.Quote("../evil.txt"), strconv.Quote("/abs.txt"), strconv.Quote("ok/../../evil2.txt")}
+	if !slices.Equal(result.RefusedNames, wantRefused) {
+		t.Fatalf("refused names = %v", result.RefusedNames)
 	}
 
 	if readFile(t, filepath.Join(home, "target/good.txt")) != "good.txt" {

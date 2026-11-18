@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -106,10 +107,15 @@ type HomeRule struct {
 	Mail bool `json:"mail"`
 }
 
-// HomeCopied counts what a copy of the home took and left out.
+// HomeCopied counts what a copy of the home took and left out. Refused
+// counts the entries left out because their names could lead out of the
+// home (non-UTF-8, traversal, absolute); RefusedNames are the first
+// maxDroppedNames of those names, quoted so non-UTF-8 bytes are safe to show.
 type HomeCopied struct {
-	Entries int `json:"entries"`
-	Dropped int `json:"dropped"`
+	Entries      int      `json:"entries"`
+	Dropped      int      `json:"dropped"`
+	Refused      int      `json:"refused"`
+	RefusedNames []string `json:"refused_names"`
 }
 
 // CheckHomeRule reports whether rule only names paths inside the home.
@@ -223,9 +229,9 @@ func CopyForeignDumps(backup io.Reader, kind, top string, want []string, add fun
 	}
 
 	if kind == KindDirectAdmin {
-		err = walkTar(stream.reader, visit)
+		err = walkTar(stream.reader, nil, visit)
 	} else {
-		err = walkCpanel(stream.reader, &top, visit)
+		err = walkCpanel(stream.reader, &top, nil, visit)
 	}
 
 	found := errors.Is(err, errFound)
@@ -256,15 +262,19 @@ func (b *BackupWriter) AddForeignHome(backup io.Reader, kind, top string, rules 
 		return copied, err
 	}
 
+	var dropped droppedNames
+
 	if kind == KindDirectAdmin {
-		err = b.addDirectAdminHome(stream.reader, rules, &copied)
+		err = b.addDirectAdminHome(stream.reader, rules, &copied, &dropped)
 	} else {
-		err = b.addCpanelHome(stream.reader, top, rules, &copied)
+		err = b.addCpanelHome(stream.reader, top, rules, &copied, &dropped)
 	}
 
 	if closed := stream.close(err == nil); err == nil {
 		err = closed
 	}
+
+	copied.Refused, copied.RefusedNames = dropped.count, dropped.names
 
 	return copied, err
 }
@@ -467,9 +477,36 @@ func (a *archive) kind() string {
 	return KindCpanel
 }
 
+// maxDroppedNames bounds how many names of dropped entries are kept to
+// report; the rest are only counted.
+const maxDroppedNames = 100
+
+// droppedNames collects the names of archive entries dropped because their
+// names could lead out of the target (non-UTF-8, traversal, absolute). It
+// keeps at most maxDroppedNames, each quoted with strconv.Quote so non-UTF-8
+// bytes are escaped safely, and counts all of them. A nil *droppedNames
+// collects nothing, so callers that do not report them pass nil.
+type droppedNames struct {
+	names []string
+	count int
+}
+
+func (d *droppedNames) add(name string) {
+	if d == nil {
+		return
+	}
+
+	d.count++
+
+	if len(d.names) < maxDroppedNames {
+		d.names = append(d.names, strconv.Quote(name))
+	}
+}
+
 // walkTar hands every entry of the tar stream to visit, by its cleaned
-// name. Entries whose names could lead out are skipped.
-func walkTar(stream io.Reader, visit func(name string, header *tar.Header, content io.Reader) error) error {
+// name. Entries whose names could lead out are skipped, and their original
+// names are collected in dropped (which may be nil).
+func walkTar(stream io.Reader, dropped *droppedNames, visit func(name string, header *tar.Header, content io.Reader) error) error {
 	reader := tar.NewReader(stream)
 
 	for {
@@ -484,6 +521,8 @@ func walkTar(stream io.Reader, visit func(name string, header *tar.Header, conte
 
 		name, ok := entryName(header.Name)
 		if !ok {
+			dropped.add(header.Name)
+
 			continue
 		}
 

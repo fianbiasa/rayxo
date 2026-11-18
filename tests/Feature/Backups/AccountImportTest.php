@@ -245,6 +245,30 @@ class AccountImportTest extends TestCase
         $this->assertSame('baru@example.com', User::query()->where('username', 'baru')->sole()->email);
     }
 
+    public function test_an_import_notes_the_entries_the_agent_left_out_by_name()
+    {
+        // The agent reports the names it dropped (quoted, so odd bytes such as
+        // a non-UTF-8 byte are safe to show) in the convert result; the import
+        // turns them into a note for the administrator.
+        $this->answers['backup.import_convert'] = fn (array $params): array => [
+            'name' => $params['name'],
+            'size' => 52000,
+            'manifest' => (string) json_encode($params['manifest']),
+            'settings' => (string) json_encode($params['settings']),
+            'refused' => 2,
+            'refused_names' => ['"caf\xe9.txt"', '"/etc/evil"'],
+        ];
+        $import = AccountImport::factory()->create(['file' => self::FILE, 'actor_id' => $this->admin->id]);
+
+        app(AccountImportService::class)->run($import);
+
+        $this->assertSame(AccountImport::STATUS_RESTORING, $import->refresh()->status, (string) $import->error);
+        $this->assertContains(
+            'Some files of the home were left out because their names cannot be used here: "caf\xe9.txt", "/etc/evil".',
+            $import->notes
+        );
+    }
+
     public function test_the_main_website_keeps_its_files_without_its_userdata()
     {
         $inspection = $this->inspection();

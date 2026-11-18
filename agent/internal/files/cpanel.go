@@ -22,7 +22,7 @@ const (
 
 // readCpanel gathers what a cPanel backup holds.
 func readCpanel(stream io.Reader, in *inspector) error {
-	return walkCpanel(stream, &in.inspection.Top, func(rel string, header *tar.Header, content io.Reader) error {
+	return walkCpanel(stream, &in.inspection.Top, nil, func(rel string, header *tar.Header, content io.Reader) error {
 		if inner, ok := strings.CutPrefix(rel, cpanelHome+"/"); ok {
 			in.homeEntry(inner, header)
 		}
@@ -40,8 +40,8 @@ func readCpanel(stream io.Reader, in *inspector) error {
 }
 
 // addCpanelHome copies the home of a cPanel backup, homedir/.
-func (b *BackupWriter) addCpanelHome(stream io.Reader, top string, rules []HomeRule, copied *HomeCopied) error {
-	return walkCpanel(stream, &top, func(rel string, header *tar.Header, content io.Reader) error {
+func (b *BackupWriter) addCpanelHome(stream io.Reader, top string, rules []HomeRule, copied *HomeCopied, dropped *droppedNames) error {
+	return walkCpanel(stream, &top, dropped, func(rel string, header *tar.Header, content io.Reader) error {
 		if inner, ok := strings.CutPrefix(rel, cpanelHome+"/"); ok {
 			return b.addHomeEntry(rules, inner, header, content, copied)
 		}
@@ -63,8 +63,8 @@ func cpanelDump(rel string, header *tar.Header) (string, bool) {
 // walkCpanel hands every entry of a cPanel backup's tar stream to visit,
 // by its name under the top folder. top is the folder all entries must be
 // in; an empty one becomes that of the first entry.
-func walkCpanel(stream io.Reader, top *string, visit func(rel string, header *tar.Header, content io.Reader) error) error {
-	return walkTar(stream, func(name string, header *tar.Header, content io.Reader) error {
+func walkCpanel(stream io.Reader, top *string, dropped *droppedNames, visit func(rel string, header *tar.Header, content io.Reader) error) error {
+	return walkTar(stream, dropped, func(name string, header *tar.Header, content io.Reader) error {
 		first, rel, _ := strings.Cut(name, "/")
 
 		if *top == "" {
