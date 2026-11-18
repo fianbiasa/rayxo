@@ -90,7 +90,7 @@ class CronScheduleTest extends TestCase
 
     public function test_normalize_lowercases_and_collapses_whitespace()
     {
-        $this->assertSame('*/5 * * * *', CronSchedule::normalize("  */5   *  * * *  "));
+        $this->assertSame('*/5 * * * *', CronSchedule::normalize('  */5   *  * * *  '));
         $this->assertSame('@hourly', CronSchedule::normalize(' @HOURLY '));
     }
 
