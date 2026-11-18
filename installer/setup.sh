@@ -95,6 +95,25 @@ readonly RSPAMD_DKIM_DIR="/var/lib/rspamd/dkim"
 readonly RSPAMD_MAP_DIR="/etc/rspamd/rayxo"
 readonly DNS_REPORT="$CONFIG_DIR/dns-records.txt"
 readonly RELEASE_REPO="fianbiasa/rayxo"
+# GPG public key that signs the release checksum files (.sha256.asc), embedded
+# here because setup.sh is downloaded on its own and cannot read a key out of
+# the very tarball it is checking. While it is empty, signature checking is
+# skipped and only the SHA-256 checksum is enforced; paste the armored public
+# key here — and its primary-key fingerprint (uppercase, no spaces) in
+# RELEASE_SIGNING_FPR — to require a valid signature on every downloaded
+# release. Its private half lives only in the release workflow's
+# GPG_PRIVATE_KEY secret, so nothing secret is kept in the repo.
+readonly RELEASE_SIGNING_KEY='-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEav29HRYJKwYBBAHaRw8BAQdAwxn/gbxpiM+ODltd5yc2uQt4epBb1pOCIYjb
+k/dVpHu0L1JBWVhPIFJlbGVhc2UgU2lnbmluZyA8cmVsZWFzZXNAcmF5eG9wYW5l
+bC5jb20+iK8EExYKAFcWIQRdhrWQvpZ98ZMtl7k0m8tlSoZWDQUCav29HRsUgAAA
+AAAEAA5tYW51MiwyLjUrMS4xMiwwLDMCGwMFCwkIBwICIgIGFQoJCAsCBBYCAwEC
+HgcCF4AACgkQNJvLZUqGVg0eiwEAo5N69+M1UXLijKRNK7Y2a4gg+7+63PoeFVYQ
+avqPa+wA/26aUJgYfH3x4IawW339sj3O8Z+EtsewrMPiXAlF6vsN
+=hIhO
+-----END PGP PUBLIC KEY BLOCK-----'
+readonly RELEASE_SIGNING_FPR='5D86B590BE967DF1932D97B9349BCB654A86560D'
 # Public DNS over HTTPS, asked in this order. A resolver's cache can still
 # hold a record that just changed (a Cloudflare node kept an old PTR for its
 # whole TTL), so a check that fails with one asks the next before failing.
@@ -1278,23 +1297,93 @@ install_site_php() {
     info "PHP ${site_php_versions[*]} siap untuk website (bawaan: $PHP_VERSION)"
 }
 
+# Verify a detached, armored GPG signature of a file against a given public
+# key. The key is imported into a throwaway keyring, so the machine's own
+# keyring and trust database are never touched, and when a fingerprint is given
+# the imported key must match it. Returns 0 only for a cryptographically valid
+# signature made by that key; never exits, so callers decide what a failure
+# means. Args: <armored-public-key> <fingerprint|''> <signed-file> <signature>.
+gpg_verify_checksum() {
+    local pubkey="$1" want_fpr="$2" signed="$3" sig="$4"
+    [[ -f "$signed" && -f "$sig" ]] || return 2
+    command -v gpg >/dev/null 2>&1 || return 3
+
+    local home status=0 log="${INSTALL_LOG:-/dev/null}"
+    # Fall back to /dev/null when the install log is not writable (e.g. the unit
+    # test, which runs unprivileged), so diagnostics never fail the check.
+    { : >>"$log"; } 2>/dev/null || log=/dev/null
+    home="$(mktemp -d)" || return 4
+    chmod 700 "$home"
+
+    if ! printf '%s\n' "$pubkey" | GNUPGHOME="$home" gpg --batch --quiet --import >>"$log" 2>&1; then
+        rm -rf "$home"
+        return 5
+    fi
+
+    if [[ -n "$want_fpr" ]]; then
+        local have
+        have="$(GNUPGHOME="$home" gpg --batch --with-colons --fingerprint 2>/dev/null |
+            awk -F: '$1 == "fpr" { print $10; exit }')"
+        if [[ "$have" != "$want_fpr" ]]; then
+            rm -rf "$home"
+            return 6
+        fi
+    fi
+
+    GNUPGHOME="$home" gpg --batch --verify "$sig" "$signed" >>"$log" 2>&1 || status=1
+    rm -rf "$home"
+    return "$status"
+}
+
+# Check the release checksum file's own signature before its checksum is
+# trusted. A no-op until RELEASE_SIGNING_KEY is set above. An invalid signature
+# always aborts the install; a missing one aborts only when $3 (require) is 1 —
+# set for a release downloaded from GitHub (the threat this guards against is a
+# tampered download, where an attacker could also strip the signature), and 0
+# for a package the operator built and passed with --package, which
+# build-release.sh does not sign. So a tampered release can never slip through
+# with a matching (also tampered) checksum.
+verify_release_signature() {
+    local checksum_file="$1" sig_file="$2" require="$3"
+    [[ -n "$RELEASE_SIGNING_KEY" ]] || return 0
+
+    if [[ -z "$sig_file" || ! -f "$sig_file" ]]; then
+        [[ "$require" == "1" ]] && die "tanda tangan rilis tidak ada; paket tidak tepercaya"
+        return 0
+    fi
+    command -v gpg >/dev/null 2>&1 || die "gnupg tidak terpasang; tanda tangan rilis tidak bisa diverifikasi"
+    gpg_verify_checksum "$RELEASE_SIGNING_KEY" "$RELEASE_SIGNING_FPR" "$checksum_file" "$sig_file" ||
+        die "tanda tangan rilis tidak valid; paket tidak tepercaya"
+    info "Tanda tangan rilis (GPG) valid"
+}
+
 fetch_release() {
     step "Mengambil paket RAYXO"
 
     work_dir="$(mktemp -d "$INSTALL_DIR/.setup.XXXXXX")"
 
-    local tarball checksum_file
+    local tarball checksum_file sig_file require_sig
     if [[ -n "$release_url" ]]; then
         tarball="$work_dir/release.tar.gz"
         checksum_file="$tarball.sha256"
+        sig_file="$checksum_file.asc"
+        require_sig=1
         info "Mengunduh $release_url"
         curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$tarball" "$release_url"
         curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$checksum_file" "$release_url.sha256" ||
             die "checksum $release_url.sha256 tidak bisa diunduh"
+        # Best-effort download; when a signing key is embedded its absence is
+        # fatal (require_sig=1), so a stripped signature cannot bypass the check.
+        curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$sig_file" "$release_url.sha256.asc" 2>/dev/null ||
+            sig_file=""
     else
         tarball="$package_file"
         checksum_file="$package_file.sha256"
+        sig_file="$package_file.sha256.asc"
+        require_sig=0
     fi
+
+    verify_release_signature "$checksum_file" "$sig_file" "$require_sig"
 
     if [[ -f "$checksum_file" ]]; then
         local expected actual

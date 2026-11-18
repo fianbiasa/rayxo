@@ -47,6 +47,33 @@ jobs:
       - name: Build release packages
         run: installer/build-release.sh "${GITHUB_REF_NAME#v}"
 
+      # Sign each checksum file with the release GPG key, publishing a detached
+      # .sha256.asc beside it; setup.sh verifies it before trusting the
+      # checksum. The key comes from GitHub Secrets (nothing in the repo changes
+      # hands). Without the secret this step is skipped, so releases still work
+      # before the key is set up — but a setup.sh that has the public key
+      # embedded then refuses an unsigned release, so set the secret first.
+      - name: Sign release checksums
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [[ -z "$GPG_PRIVATE_KEY" ]]; then
+            echo "::warning::GPG_PRIVATE_KEY is not set; release checksums are not signed."
+            exit 0
+          fi
+          GNUPGHOME="$(mktemp -d)"
+          export GNUPGHOME
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --quiet --import
+          key_id="$(gpg --list-secret-keys --with-colons | awk -F: '/^sec:/ { print $5; exit }')"
+          [[ -n "$key_id" ]] || { echo "::error::no secret key found in GPG_PRIVATE_KEY"; exit 1; }
+          for checksum in dist/*.sha256; do
+            gpg --batch --yes --pinentry-mode loopback \
+              ${GPG_PASSPHRASE:+--passphrase "$GPG_PASSPHRASE"} \
+              --local-user "$key_id" --armor --detach-sign --output "$checksum.asc" "$checksum"
+          done
+          echo "Signed:"; ls -1 dist/*.asc
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
