@@ -64,6 +64,11 @@ final class FakeAgentClient implements AgentClient
             'bfm.status' => $this->bruteForceReport(),
             'bfm.unban' => ['ip' => $params['ip'] ?? '', 'simulated' => true],
             'bfm.whitelist' => ['ips' => $params['ips'] ?? [], 'simulated' => true],
+            'firewall.status' => $this->firewallReport(null),
+            'firewall.apply' => ($params['enabled'] ?? false) === true
+                ? $this->firewallReport($params)
+                : $this->firewallReport(['enabled' => false]),
+            'firewall.confirm', 'firewall.cancel' => $this->firewallReport(null),
             'fs.list' => $this->fileListing((string) ($params['username'] ?? ''), (string) ($params['path'] ?? '')),
             'fs.read' => ['content' => "<?php\n\necho 'Hello from RAYXO';\n", 'size' => 33, 'version' => 'simulated-1'],
             'fs.write' => ['size' => strlen((string) ($params['content'] ?? '')), 'version' => 'simulated-'.now()->getTimestamp()],
@@ -182,6 +187,39 @@ final class FakeAgentClient implements AgentClient
                 ['name' => 'rayxo-panel', 'currently_failed' => 0, 'total_failed' => 5, 'currently_banned' => 0, 'total_banned' => 1, 'banned_ips' => []],
             ],
             'whitelist' => ['198.51.100.4'],
+            'simulated' => true,
+        ];
+    }
+
+    /**
+     * The firewall's state for local development: off by default, or a pending
+     * trial right after an enabling apply.
+     *
+     * @param  array<string, mixed>|null  $config
+     * @return array<string, mixed>
+     */
+    private function firewallReport(?array $config): array
+    {
+        $pending = null;
+        if ($config !== null && ($config['enabled'] ?? false) === true) {
+            $pending = [
+                'config' => [
+                    'enabled' => true,
+                    'tcp_ports' => array_values(array_map('intval', $config['tcp_ports'] ?? [])),
+                    'udp_ports' => array_values(array_map('intval', $config['udp_ports'] ?? [])),
+                    'allow_ips' => array_values($config['allow_ips'] ?? []),
+                    'deny_ips' => array_values($config['deny_ips'] ?? []),
+                ],
+                'expires_at' => now()->addMinutes(5)->startOfSecond()->toIso8601ZuluString(),
+            ];
+        }
+
+        return [
+            'active' => ['enabled' => false, 'tcp_ports' => [], 'udp_ports' => [], 'allow_ips' => [], 'deny_ips' => []],
+            'pending' => $pending,
+            'always_open_tcp' => [21, 22, 25, 53, 80, 110, 143, 443, 465, 587, 993, 995, 2222],
+            'always_open_udp' => [53],
+            'ftp_passive' => '35000-35999',
             'simulated' => true,
         ];
     }

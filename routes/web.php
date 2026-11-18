@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\BrandingController;
 use App\Http\Controllers\Admin\BruteForceController;
 use App\Http\Controllers\Admin\DnsController as AdminDnsController;
+use App\Http\Controllers\Admin\FirewallController;
 use App\Http\Controllers\Admin\IpAddressController;
 use App\Http\Controllers\Admin\LoginHistoryController;
 use App\Http\Controllers\Admin\MailQueueController;
@@ -341,6 +342,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('brute-force', [BruteForceController::class, 'index'])->middleware('throttle:60,1,admin-brute-force')->name('brute-force.index');
         Route::post('brute-force/unban', [BruteForceController::class, 'unban'])->middleware('throttle:30,1,admin-brute-force-unban')->name('brute-force.unban');
         Route::put('brute-force/whitelist', [BruteForceController::class, 'updateWhitelist'])->middleware('throttle:20,1,admin-brute-force-whitelist')->name('brute-force.whitelist');
+        Route::get('firewall', [FirewallController::class, 'index'])->middleware('throttle:60,1,admin-firewall')->name('firewall.index');
+        Route::put('firewall', [FirewallController::class, 'apply'])->middleware('throttle:30,1,admin-firewall-apply')->name('firewall.apply');
+        Route::post('firewall/confirm', [FirewallController::class, 'confirm'])->middleware('throttle:30,1,admin-firewall-confirm')->name('firewall.confirm');
+        Route::post('firewall/cancel', [FirewallController::class, 'cancel'])->middleware('throttle:30,1,admin-firewall-cancel')->name('firewall.cancel');
         Route::get('processes', [ProcessController::class, 'index'])->middleware('throttle:60,1,admin-processes')->name('processes.index');
         Route::post('processes/kill', [ProcessController::class, 'kill'])->middleware('throttle:30,1,admin-process-kill')->name('processes.kill');
         Route::get('dns', [AdminDnsController::class, 'index'])->name('dns.index');
