@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 
 	"rayxo/agent/internal/bandwidth"
+	"rayxo/agent/internal/bfm"
 	"rayxo/agent/internal/cgroup"
 	"rayxo/agent/internal/clock"
 	"rayxo/agent/internal/database"
@@ -176,6 +177,10 @@ func Register(registry *rpc.Registry, config Config) {
 	}
 
 	for name, method := range serviceMethods(manager) {
+		registry.Register(name, method)
+	}
+
+	for name, method := range bfmMethods(bfm.New(bfm.DefaultConfig())) {
 		registry.Register(name, method)
 	}
 }
