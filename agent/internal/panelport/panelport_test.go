@@ -123,6 +123,7 @@ func TestOpenRefusesPortsThatCannotBeThePanels(t *testing.T) {
 		{3306, ErrReservedPort},
 		{8080, ErrReservedPort},
 		{8081, ErrReservedPort},
+		{8444, ErrReservedPort},
 		{35500, ErrReservedPort},
 		{70000, ErrReservedPort},
 		{2222, ErrSamePort},
@@ -141,7 +142,7 @@ func TestOpenRefusesPortsThatCannotBeThePanels(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := e.manager().Open(context.Background(), 8444); !errors.Is(err, ErrTrialRunning) {
+	if _, err := e.manager().Open(context.Background(), 8445); !errors.Is(err, ErrTrialRunning) {
 		t.Fatalf("second trial: err = %v, want ErrTrialRunning", err)
 	}
 }

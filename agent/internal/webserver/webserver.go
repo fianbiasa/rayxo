@@ -83,6 +83,12 @@ type Config struct {
 	IPv6File string
 	// Backend is the address Apache listens on, behind Nginx.
 	Backend string
+	// TLSBackend is the address Apache serves the websites' HTTPS requests
+	// on, over TLS, so Apache and every .htaccess see HTTPS as the visitor
+	// does. TLSUpstream is the Nginx upstream setup.sh defines for it, which
+	// keeps connections open instead of a TLS handshake per request.
+	TLSBackend  string
+	TLSUpstream string
 	// AcmeDir is the webroot certbot puts Let's Encrypt challenges in; every
 	// vhost serves its /.well-known/acme-challenge/ on port 80.
 	AcmeDir string
@@ -164,6 +170,8 @@ func DefaultConfig() Config {
 		PHPFPMDir:      "/usr/sbin",
 		IPv6File:       "/proc/net/if_inet6",
 		Backend:        "127.0.0.1:8080",
+		TLSBackend:     "127.0.0.1:8444",
+		TLSUpstream:    "rayxo_apache_tls",
 		AcmeDir:        "/var/www/rayxo-acme",
 		LetsEncryptDir: "/etc/letsencrypt",
 		// Root only, beside (not among) the panel's own certificate links

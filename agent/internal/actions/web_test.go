@@ -70,6 +70,8 @@ func newWebEnv(t *testing.T) *webEnv {
 		SitesDir:             filepath.Join(base, "sites-enabled"),
 		PanelSnippet:         filepath.Join(base, "snippets/rayxo-panel.conf"),
 		Backend:              "127.0.0.1:8080",
+		TLSBackend:           "127.0.0.1:8444",
+		TLSUpstream:          "rayxo_apache_tls",
 		AcmeDir:              filepath.Join(base, "acme"),
 		LetsEncryptDir:       filepath.Join(base, "letsencrypt"),
 		CustomCertificateDir: filepath.Join(base, "ssl"),

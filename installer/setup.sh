@@ -843,7 +843,7 @@ resolve_panel_port() {
     local passive_low passive_high
     read -r passive_low passive_high <<<"$FTP_PASSIVE_PORTS"
     case "$PANEL_PORT" in
-        3306 | 6379 | 8080 | 8081 | 8891 | 11332 | 11333 | 11334) die "port $PANEL_PORT dipakai layanan lain di server ini; pilih port lain" ;;
+        3306 | 6379 | 8080 | 8081 | 8444 | 8891 | 11332 | 11333 | 11334) die "port $PANEL_PORT dipakai layanan lain di server ini; pilih port lain" ;;
     esac
     if ((PANEL_PORT >= passive_low && PANEL_PORT <= passive_high)); then
         die "port $PANEL_PORT termasuk port passive FTP ($passive_low-$passive_high); pilih port lain"
@@ -2266,7 +2266,8 @@ configure_sftp() {
 }
 
 # Customer websites: Nginx in front (ports 80/443, static files), Apache on
-# 127.0.0.1:8080 behind it so .htaccess works, PHP in a pool per account.
+# 127.0.0.1:8080 behind it so .htaccess works (HTTPS requests reach it over
+# TLS on 127.0.0.1:8444), PHP in a pool per account.
 # The agent writes one Nginx and one Apache file per domain into the
 # directories created here.
 # The addresses PowerDNS answers on: 127.0.0.1 and every global address of
@@ -3081,16 +3082,22 @@ SQL
 }
 
 configure_web() {
-    step "Mengatur web server untuk website customer (Nginx -> Apache 127.0.0.1:8080)"
+    step "Mengatur web server untuk website customer (Nginx -> Apache 127.0.0.1:8080 dan 8444)"
 
     install -d -m 0755 -o root -g root /etc/nginx/rayxo /etc/apache2/rayxo
     install -d -m 0750 -o root -g adm "$LOG_DIR/domains"
 
+    # 8444 takes the requests that came over HTTPS, over TLS, so Apache and
+    # every .htaccess see HTTPS as the visitor does: a website's force-HTTPS
+    # rule (RewriteCond %{HTTPS} off) would otherwise redirect forever.
     cat >/etc/apache2/ports.conf <<'CONF'
 # Managed by rayxo setup.sh. Apache only serves Nginx, on loopback;
 # Nginx owns ports 80 and 443.
 Listen 127.0.0.1:8080
+Listen 127.0.0.1:8444 https
 CONF
+
+    make_apache_backend_certificate
 
     render "$release_dir/config/apache-rayxo.conf" /etc/apache2/conf-available/rayxo.conf
 
@@ -3126,13 +3133,26 @@ CONF
     # expires: sites moved from other panels often set ExpiresActive in their
     # .htaccess without <IfModule>, which is a 500 when the module is off.
     quietly a2dismod -q mpm_prefork mpm_worker
-    quietly a2enmod -q mpm_event proxy_fcgi remoteip rewrite headers expires setenvif cgid suexec
+    quietly a2enmod -q mpm_event proxy_fcgi remoteip rewrite headers expires setenvif cgid suexec ssl
     quietly a2enconf -q rayxo
 
     {
         printf '# Managed by rayxo setup.sh: customer websites, one file per domain,\n'
         printf '# written by the agent (rayxod).\n'
         printf 'include /etc/nginx/rayxo/*/*.conf;\n'
+
+        # Apache over TLS for the websites' HTTPS requests. Connections stay
+        # open and every website shares them: a TLS handshake per request
+        # would cost most of Apache's throughput. No SNI is sent (Nginx's
+        # default), so a connection serves any website; Apache picks the
+        # vhost by the Host header. They close after 4 idle seconds, before
+        # Apache would (KeepAliveTimeout 5); a request that meets one Apache
+        # closed while reloading goes again (proxy_next_upstream, vhosts).
+        printf '\nupstream rayxo_apache_tls {\n'
+        printf '    server 127.0.0.1:8444;\n'
+        printf '    keepalive 32;\n'
+        printf '    keepalive_timeout 4s;\n'
+        printf '}\n'
 
         # Room for long domain names (253 characters plus "www.") and many
         # websites; with the defaults, nginx -t fails on a long name.
@@ -3160,7 +3180,23 @@ CONF
     # Starts Apache on a fresh install; applies config changes on a re-run.
     quietly systemctl reload-or-restart apache2
     systemctl reload nginx
-    info "Apache hanya mendengar di 127.0.0.1:8080, di belakang Nginx"
+    info "Apache hanya mendengar di 127.0.0.1:8080 dan 8444 (TLS), di belakang Nginx"
+}
+
+# The certificate of Apache's TLS port, which only Nginx connects to on
+# loopback: self-signed, and Nginx does not check it. Kept across re-runs.
+make_apache_backend_certificate() {
+    local dir=/etc/apache2/rayxo-backend
+    install -d -m 0700 -o root -g root "$dir"
+
+    if [[ -s "$dir/cert.pem" && -s "$dir/key.pem" ]]; then
+        return
+    fi
+
+    quietly openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -days 36500 \
+        -keyout "$dir/key.pem" -out "$dir/cert.pem" -subj "/CN=localhost" \
+        -addext "subjectAltName=DNS:localhost" -addext "basicConstraints=critical,CA:FALSE"
+    chmod 0600 "$dir/key.pem"
 }
 
 # Whether the mount options in $1 (comma separated) turn on user quotas, on
@@ -3577,9 +3613,9 @@ verify_install() {
     systemctl is-active --quiet apache2 || die "Apache tidak berjalan (cek: journalctl -u apache2)"
     local apache_listen
     apache_listen="$(ss -ltnpH | awk '/"apache2"/ {print $4}' | sort -u | paste -sd ' ' -)"
-    [[ "$apache_listen" == "127.0.0.1:8080" ]] ||
-        die "Apache harus hanya mendengar di 127.0.0.1:8080, sekarang: ${apache_listen:-tidak mendengar di port mana pun}"
-    info "Apache aktif dan hanya mendengar di 127.0.0.1:8080"
+    [[ "$apache_listen" == "127.0.0.1:8080 127.0.0.1:8444" ]] ||
+        die "Apache harus hanya mendengar di 127.0.0.1:8080 dan 127.0.0.1:8444, sekarang: ${apache_listen:-tidak mendengar di port mana pun}"
+    info "Apache aktif dan hanya mendengar di 127.0.0.1:8080 dan 8444 (TLS)"
 
     # nginx -t does not bind ports, so a reload that could not take port 443
     # would only show up here.

@@ -32,7 +32,7 @@ server {
     ssl_certificate {{.Certificate}};
     ssl_certificate_key {{.CertificateKey}};
     ssl_protocols TLSv1.2 TLSv1.3;
-{{- template "content" .}}
+{{- template "content" .OverTLS}}
 }
 {{- end}}
 {{- /* What every server of the domain shares, on any port. */ -}}
@@ -192,9 +192,14 @@ server {
 {{.Indent}}        try_files $uri @apache;
 {{.Indent}}    }
 {{- end}}
-{{- /* Apache behind Nginx. X-Forwarded-Proto tells Apache (and PHP) whether the visitor uses HTTPS. */ -}}
+{{- /* Apache behind Nginx: over TLS for HTTPS requests (OverTLS), so Apache knows the visitor uses HTTPS. */ -}}
 {{define "proxy"}}
-        proxy_pass http://{{.Backend}};
+        proxy_pass {{.ProxyTo}};
+        # Apache closes its idle connections when it reloads, which it does on
+        # every website change. A request Nginx sent on one just then never
+        # reached Apache, so it goes again on a new connection, a POST too.
+        # Nothing else is retried: there is only one Apache to try.
+        proxy_next_upstream error non_idempotent;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

@@ -1,5 +1,20 @@
 # {{.Domain}} of account {{.User}}. Written by rayxod; changes are overwritten.
 <VirtualHost {{.Backend}}>
+{{- template "apache-site" .}}
+</VirtualHost>
+{{- if .SSL}}
+
+# The same website for the requests that came over HTTPS. Nginx sends them
+# here over TLS, so Apache, PHP and the website's .htaccess see HTTPS as the
+# visitor does: %{HTTPS} is on and the port 443, so a force-HTTPS rule does
+# not redirect forever, and Apache's own redirects stay on https://.
+<VirtualHost {{.TLSBackend}}>
+    SSLEngine on
+{{- template "apache-site" .}}
+</VirtualHost>
+{{- end}}
+{{- /* The website itself, the same over HTTP and HTTPS. */ -}}
+{{define "apache-site"}}
     ServerName {{.Domain}}
     ServerAlias www.{{.Domain}}
     DocumentRoot {{.DocumentRoot}}
@@ -78,4 +93,4 @@
         Require all granted
     </Directory>
 {{- end}}
-</VirtualHost>
+{{- end}}

@@ -216,14 +216,20 @@ func TestRenderedNginxVhostWithHTTPS(t *testing.T) {
 		"include "+env.cfg.NginxDir+"/budi/suspended*.inc;",
 		"location ~ /\\.(?!well-known(?:/|$)) {\n        deny all;\n    }",
 		"try_files $uri @apache;",
-		"location / {\n        proxy_pass http://127.0.0.1:8080;",
-		"location @apache {\n        proxy_pass http://127.0.0.1:8080;",
+		// Apache over TLS, so it sees HTTPS as the visitor does.
+		"location / {\n        proxy_pass https://rayxo_apache_tls;",
+		"location @apache {\n        proxy_pass https://rayxo_apache_tls;",
+		// A POST on a kept-open connection Apache closed while reloading.
+		"proxy_next_upstream error non_idempotent;",
 		"proxy_set_header X-Forwarded-Proto $scheme;",
 	)
-	assertNotContains(t, "HTTPS server", https, "acme-challenge", "return 301", "listen 80", "[::]")
+	assertNotContains(t, "HTTPS server", https, "acme-challenge", "return 301", "listen 80", "[::]", "8080")
 
 	// Without forcing HTTPS, port 80 still serves the website itself.
-	assertContains(t, "HTTP server", plain, "    listen 80;\n", "location / {\n        proxy_pass", "root /home/budi/domains/example.com/public_html;")
+	assertContains(t, "HTTP server", plain, "    listen 80;\n",
+		"location / {\n        proxy_pass http://127.0.0.1:8080;",
+		"location @apache {\n        proxy_pass http://127.0.0.1:8080;",
+		"root /home/budi/domains/example.com/public_html;")
 	// "listen 443", not "443": the temporary directory in the paths may hold those digits.
 	assertNotContains(t, "HTTP server", plain, "ssl", "listen 443", "return 301")
 
@@ -255,11 +261,42 @@ func TestRenderedNginxVhostForcingHTTPS(t *testing.T) {
 	)
 	assertNotContains(t, "HTTP server", plain, "proxy_pass", "root /home", "suspended")
 
-	assertContains(t, "HTTPS server", https, "listen 443 ssl http2;", "proxy_pass http://127.0.0.1:8080;")
+	assertContains(t, "HTTPS server", https, "listen 443 ssl http2;", "proxy_pass https://rayxo_apache_tls;")
 
 	if strings.Count(nginx, "proxy_pass") != 2 {
 		t.Fatalf("only the HTTPS server proxies:\n%s", nginx)
 	}
+}
+
+func TestRenderedApacheVhostWithHTTPS(t *testing.T) {
+	env := newEnv(t)
+	env.writeCertificate("example.com", "example.com", "www.example.com")
+
+	site := sslSite(true)
+	site.CGI = true
+	env.mustApply(site)
+
+	apache := env.read(env.apacheVhost("budi", "example.com"))
+
+	// The requests that came over HTTPS reach Apache over TLS, in a vhost
+	// of their own that serves the same website exactly as the plain one.
+	_, plain, _ := strings.Cut(apache, "<VirtualHost 127.0.0.1:8080>\n")
+	plain, rest, _ := strings.Cut(plain, "</VirtualHost>\n")
+	_, tls, found := strings.Cut(rest, "<VirtualHost 127.0.0.1:8444>\n    SSLEngine on\n")
+	if !found {
+		t.Fatalf("expected a TLS vhost:\n%s", apache)
+	}
+
+	tls, _, _ = strings.Cut(tls, "</VirtualHost>\n")
+	if tls != plain || strings.Count(apache, "<VirtualHost") != 2 {
+		t.Fatalf("the TLS vhost should serve the same website:\n%s", apache)
+	}
+
+	assertContains(t, "TLS vhost", tls,
+		"    ServerName example.com\n",
+		"ProxyFCGISetEnvIf \"true\" RAYXO_POOL_OWNER \"budi\"\n",
+		"SuexecUserGroup budi budi\n",
+	)
 }
 
 func TestRenderedNginxVhostSendsVisitorsToOneName(t *testing.T) {

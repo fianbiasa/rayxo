@@ -66,6 +66,8 @@ func newEnv(t *testing.T) *testEnv {
 		SitesDir:             filepath.Join(base, "etc/nginx/sites-enabled"),
 		PanelSnippet:         filepath.Join(base, "etc/nginx/snippets/rayxo-panel.conf"),
 		Backend:              "127.0.0.1:8080",
+		TLSBackend:           "127.0.0.1:8444",
+		TLSUpstream:          "rayxo_apache_tls",
 		AcmeDir:              filepath.Join(base, "var/www/rayxo-acme"),
 		// The same layout as /etc/letsencrypt.
 		LetsEncryptDir: filepath.Join(base, "etc/letsencrypt"),
@@ -480,7 +482,8 @@ func TestRenderedApacheVhost(t *testing.T) {
 		"ProxyFCGISetEnvIf \"true\" RAYXO_POOL_OWNER \"budi\"\n",
 		"</VirtualHost>\n",
 	)
-	assertNotContains(t, "apache vhost", apache, "CustomLog", "<no value>")
+	// Without HTTPS, no vhost on Apache's TLS port.
+	assertNotContains(t, "apache vhost", apache, "CustomLog", "<no value>", "SSLEngine", "8444")
 
 	// The pool runs the account's guard, and its owner matches the vhost.
 	guard := env.read(filepath.Join(env.cfg.GuardDir, "budi.php"))

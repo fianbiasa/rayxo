@@ -4,13 +4,20 @@ package isolation
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -26,8 +33,13 @@ import (
 
 var socketPath = flag.String("socket", "/run/rayxo/agent.sock", "agent socket")
 
-// The web server's plain HTTP port; the websites answer there by name.
-const webAddress = "127.0.0.1:80"
+// The web server's address; the websites answer there by name, on port 80
+// and, with a certificate, 443.
+const webHost = "127.0.0.1"
+
+// Where the certificates customers bring themselves go, one folder per
+// domain (webserver.DefaultConfig).
+const customCertificateDir = "/etc/rayxo/ssl/domains"
 
 // account is a hosting account made for the test, with one website.
 type account struct {
@@ -44,9 +56,10 @@ func (a account) docroot() string {
 
 // server is the RAYXO server under test, with attacker a and victim b.
 type server struct {
-	secret string
-	php    string
-	a, b   account
+	secret     string
+	php        string
+	phpVersion string
+	a, b       account
 }
 
 func TestAnAccountCannotReadAnotherAccountsFiles(t *testing.T) {
@@ -70,6 +83,7 @@ func TestAnAccountCannotReadAnotherAccountsFiles(t *testing.T) {
 	t.Run("through Apache expressions in .htaccess", s.throughApacheExpressions)
 	t.Run("a normal app .htaccess still works", s.legitHtaccess)
 	t.Run("a migrated site's .htaccess still works", s.migratedHtaccess)
+	t.Run("a site's own force-HTTPS rule works over HTTPS", s.forceHTTPS)
 	t.Run("the pool owner cannot be forged from .htaccess", s.guardOwnerCannotBeForged)
 	t.Run("hidden files are never served", s.hiddenFiles)
 	t.Run("through the file manager", s.throughFileManager)
@@ -82,8 +96,9 @@ func setUp(t *testing.T) *server {
 	suffix := randomHex(t, 3)
 
 	s := &server{
-		secret: "rayxo-isolation-" + randomHex(t, 16),
-		php:    "/usr/bin/php" + version,
+		secret:     "rayxo-isolation-" + randomHex(t, 16),
+		php:        "/usr/bin/php" + version,
+		phpVersion: version,
 	}
 	s.a = createAccount(t, "isoa"+suffix, version)
 	s.b = createAccount(t, "isob"+suffix, version)
@@ -453,6 +468,131 @@ func (s *server) migratedHtaccess(t *testing.T) {
 	}
 }
 
+// forceHTTPS checks a website's own force-HTTPS rule, about the most common
+// .htaccess there is, and in most sites moved from DirectAdmin or cPanel.
+// Over HTTPS it must serve the page, not redirect to itself forever; over
+// HTTP it must still redirect. Nginx sends HTTPS requests to Apache over
+// TLS, so Apache sees HTTPS, the port and the scheme as the visitor does.
+func (s *server) forceHTTPS(t *testing.T) {
+	s.serveHTTPS(t, s.a)
+
+	site := mkdirAs(t, s.a, filepath.Join(s.a.docroot(), "secure"))
+	writeAs(t, s.a, filepath.Join(site, "env.php"),
+		"<?php echo 'https=', $_SERVER['HTTPS'] ?? '', ' port=', $_SERVER['SERVER_PORT'], ' scheme=', $_SERVER['REQUEST_SCHEME'];\n")
+	folder := mkdirAs(t, s.a, filepath.Join(site, "folder"))
+	writeAs(t, s.a, filepath.Join(folder, "index.html"), "folder")
+
+	secure := "https://" + s.a.domain + "/secure/"
+
+	// PHP runs there too: Apache's TLS vhost also tells the pool's guard
+	// whose request it is.
+	if status, _, body := fetch(t, secure+"env.php"); status != http.StatusOK || body != "https=on port=443 scheme=https" {
+		t.Errorf("GET %senv.php => %d %q (want 200 \"https=on port=443 scheme=https\")", secure, status, excerpt(body))
+	}
+
+	// Apache's own redirect, of a folder without its slash, stays on HTTPS.
+	if status, header, _ := fetch(t, secure+"folder"); status != http.StatusMovedPermanently || header.Get("Location") != secure+"folder/" {
+		t.Errorf("GET %sfolder => %d to %q (want 301 to %sfolder/)", secure, status, header.Get("Location"), secure)
+	}
+
+	for _, condition := range []string{
+		"RewriteCond %{HTTPS} !=on",
+		"RewriteCond %{HTTPS} off",
+		"RewriteCond %{SERVER_PORT} 80",
+		"RewriteCond %{SERVER_PORT} !^443$",
+		"RewriteCond %{REQUEST_SCHEME} =http",
+	} {
+		writeAs(t, s.a, filepath.Join(site, ".htaccess"),
+			"RewriteEngine On\n"+condition+"\nRewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]\n")
+
+		if status, header, body := fetch(t, secure+"env.php"); status != http.StatusOK {
+			t.Errorf("%s: GET %senv.php => %d to %q (want 200, not a redirect to itself): %q", condition, secure, status, header.Get("Location"), excerpt(body))
+		}
+
+		plain := "http://" + s.a.domain + "/secure/env.php"
+		if status, header, _ := fetch(t, plain); status != http.StatusMovedPermanently || header.Get("Location") != secure+"env.php" {
+			t.Errorf("%s: GET %s => %d to %q (want 301 to %senv.php)", condition, plain, status, header.Get("Location"), secure)
+		}
+	}
+}
+
+// serveHTTPS turns HTTPS on for the website of owner, with a self-signed
+// certificate installed as one a customer brings would be. It goes back to
+// plain HTTP when the test ends.
+func (s *server) serveHTTPS(t *testing.T, owner account) {
+	t.Helper()
+
+	dir := filepath.Join(customCertificateDir, owner.domain)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	certificate, key := selfSignedCertificate(t, owner.domain, "www."+owner.domain)
+	for name, content := range map[string][]byte{"fullchain.pem": certificate, "privkey.pem": key} {
+		if err := os.WriteFile(filepath.Join(dir, name), content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	website := map[string]any{"username": owner.Username, "domain": owner.domain, "php_version": s.phpVersion}
+
+	t.Cleanup(func() {
+		// Plain HTTP first, so Nginx never refers to a missing certificate.
+		if _, err := callAgent("web.apply_domain", website); err != nil {
+			t.Errorf("turn HTTPS off for %s: %v", owner.domain, err)
+		}
+
+		if err := os.RemoveAll(dir); err != nil {
+			t.Errorf("remove the test certificate: %v", err)
+		}
+	})
+
+	withHTTPS := map[string]any{"ssl": true, "certificate": "custom"}
+	for key, value := range website {
+		withHTTPS[key] = value
+	}
+
+	if _, err := callAgent("web.apply_domain", withHTTPS); err != nil {
+		t.Fatalf("turn HTTPS on for %s: %v", owner.domain, err)
+	}
+
+	waitFor(t, "https://"+owner.domain+"/")
+}
+
+// selfSignedCertificate returns a certificate for names and its key, PEM
+// encoded.
+func selfSignedCertificate(t *testing.T, names ...string) (certificate, key []byte) {
+	t.Helper()
+
+	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{CommonName: names[0]},
+		DNSNames:     names,
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &private.PublicKey, private)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keyDER, err := x509.MarshalECPrivateKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
+		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+}
+
 // guardOwnerCannotBeForged proves the per-pool guard cannot be fooled: a
 // request routed to another account's pool carries the requesting account's
 // RAYXO_POOL_OWNER, which that account's own Apache vhost forces after
@@ -623,16 +763,29 @@ func createAccount(t *testing.T, username, phpVersion string) account {
 func waitForWebsite(t *testing.T, domain string) {
 	t.Helper()
 
+	waitFor(t, "http://"+domain+"/")
+}
+
+// waitFor waits until the web servers answer url with 200. Until Nginx has
+// reloaded, a new HTTPS website may not even complete the TLS handshake.
+// After the first 200 it waits a little longer: Nginx's master gives its new
+// workers 100 ms to start before it stops the old ones, which meanwhile still
+// take connections with the old configuration, without the website.
+func waitFor(t *testing.T, url string) {
+	t.Helper()
+
 	deadline := time.Now().Add(30 * time.Second)
 
 	for {
-		status, _ := get(t, domain, "/")
-		if status == http.StatusOK {
+		status, _, _, err := tryFetch(url)
+		if err == nil && status == http.StatusOK {
+			time.Sleep(300 * time.Millisecond)
+
 			return
 		}
 
 		if time.Now().After(deadline) {
-			t.Fatalf("%s still answers %d after 30 seconds", domain, status)
+			t.Fatalf("%s still answers %d (%v) after 30 seconds", url, status, err)
 		}
 
 		time.Sleep(250 * time.Millisecond)
@@ -725,32 +878,57 @@ func get(t *testing.T, domain, path string) (int, string) {
 func request(t *testing.T, domain, path string) (int, http.Header, string) {
 	t.Helper()
 
+	return fetch(t, "http://"+domain+path)
+}
+
+// fetch asks the web server for url, http:// or https://, without
+// following redirects.
+func fetch(t *testing.T, url string) (int, http.Header, string) {
+	t.Helper()
+
+	status, header, body, err := tryFetch(url)
+	if err != nil {
+		t.Fatalf("GET %s: %v", url, err)
+	}
+
+	return status, header, body
+}
+
+// tryFetch is fetch that returns its error.
+func tryFetch(url string) (int, http.Header, string, error) {
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			DialContext: func(ctx context.Context, _, address string) (net.Conn, error) {
+				_, port, err := net.SplitHostPort(address)
+				if err != nil {
+					return nil, err
+				}
+
 				var dialer net.Dialer
 
-				return dialer.DialContext(ctx, "tcp", webAddress)
+				return dialer.DialContext(ctx, "tcp", net.JoinHostPort(webHost, port))
 			},
+			// The test's own self-signed certificates (serveHTTPS).
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // only the test's own certificates
 		},
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
 
-	response, err := httpClient.Get("http://" + domain + path)
+	response, err := httpClient.Get(url)
 	if err != nil {
-		t.Fatalf("GET %s%s: %v", domain, path, err)
+		return 0, nil, "", err
 	}
 	defer response.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
-		t.Fatalf("GET %s%s: %v", domain, path, err)
+		return 0, nil, "", err
 	}
 
-	return response.StatusCode, response.Header, strings.TrimSpace(string(body))
+	return response.StatusCode, response.Header, strings.TrimSpace(string(body)), nil
 }
 
 // writeAs writes a file the way the account's own upload would.

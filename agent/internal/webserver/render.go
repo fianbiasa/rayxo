@@ -30,7 +30,15 @@ type siteData struct {
 	DocumentRoot    string
 	LogDir          string
 	NginxAccountDir string
-	Backend         string
+	// Backend and TLSBackend are the addresses of the website's Apache
+	// vhosts: plain for the requests that came over HTTP, TLS for those
+	// that came over HTTPS.
+	Backend    string
+	TLSBackend string
+	// ProxyTo is where Nginx sends the requests Apache answers: Backend,
+	// or in the HTTPS server (OverTLS) tlsProxyTo, Apache over TLS.
+	ProxyTo    string
+	tlsProxyTo string
 	// CustomNginx and CustomApache are the administrator's additions every
 	// website's vhosts include; empty for none.
 	CustomNginx  string
@@ -90,6 +98,16 @@ type staticData struct {
 	Indent  string
 	Pattern string
 	Types   []mimeData
+}
+
+// OverTLS is the site as its HTTPS server sees it: what Apache answers goes
+// to Apache over TLS, so Apache, PHP and every .htaccess see HTTPS as the
+// visitor does (%{HTTPS} on, port 443, Apache's own redirects to https://).
+// A site's force-HTTPS rule would otherwise redirect forever.
+func (d siteData) OverTLS() siteData {
+	d.ProxyTo = d.tlsProxyTo
+
+	return d
 }
 
 // Static is the static files location of the site, indented by indent.
@@ -194,6 +212,9 @@ func (m *Manager) siteData(site Site) siteData {
 		LogDir:            m.cfg.LogDir,
 		NginxAccountDir:   m.nginxAccountDir(site.User),
 		Backend:           m.cfg.Backend,
+		TLSBackend:        m.cfg.TLSBackend,
+		ProxyTo:           "http://" + m.cfg.Backend,
+		tlsProxyTo:        "https://" + m.cfg.TLSUpstream,
 		Listen:            m.listenAddresses(site),
 		PHP:               !site.NoPHP,
 		Socket:            pool.Socket,
