@@ -9,6 +9,7 @@ import (
 	"rayxo/agent/internal/bandwidth"
 	"rayxo/agent/internal/bfm"
 	"rayxo/agent/internal/cgroup"
+	"rayxo/agent/internal/clamav"
 	"rayxo/agent/internal/clock"
 	"rayxo/agent/internal/database"
 	"rayxo/agent/internal/dns"
@@ -199,6 +200,10 @@ func Register(registry *rpc.Registry, config Config) {
 	}
 
 	for name, method := range firewallMethods(fw) {
+		registry.Register(name, method)
+	}
+
+	for name, method := range clamavMethods(clamav.New(clamav.DefaultConfig())) {
 		registry.Register(name, method)
 	}
 }

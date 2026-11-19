@@ -69,6 +69,17 @@ final class FakeAgentClient implements AgentClient
                 ? $this->firewallReport($params)
                 : $this->firewallReport(['enabled' => false]),
             'firewall.confirm', 'firewall.cancel' => $this->firewallReport(null),
+            'clamav.status' => ['enabled' => false, 'running' => false, 'database' => true, 'email' => false, 'on_access' => false, 'scheduled' => false, 'simulated' => true],
+            'clamav.apply' => [
+                'enabled' => ($params['enabled'] ?? false) === true,
+                'running' => ($params['enabled'] ?? false) === true,
+                'database' => true,
+                'email' => ($params['email'] ?? false) === true,
+                'on_access' => ($params['on_access'] ?? false) === true,
+                'scheduled' => ($params['scheduled'] ?? false) === true,
+                'simulated' => true,
+            ],
+            'clamav.scan' => ['clean' => true, 'infected' => [], 'simulated' => true],
             'fs.list' => $this->fileListing((string) ($params['username'] ?? ''), (string) ($params['path'] ?? '')),
             'fs.read' => ['content' => "<?php\n\necho 'Hello from RAYXO';\n", 'size' => 33, 'version' => 'simulated-1'],
             'fs.write' => ['size' => strlen((string) ($params['content'] ?? '')), 'version' => 'simulated-'.now()->getTimestamp()],

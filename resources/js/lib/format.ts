@@ -97,6 +97,8 @@ export const auditActionLabels: Record<string, string> = {
     'mailbox.filter_created': 'Filter email dibuat',
     'mailbox.filter_deleted': 'Filter email dihapus',
     'server.ioncube_changed': 'ionCube Loader diubah',
+    'server.clamav_changed': 'ClamAV diubah',
+    'server.clamav_scanned': 'Scan ClamAV dijalankan',
     'server.php_uploads_changed': 'Batas upload PHP diubah',
     'server.hostname_ssl_requested': 'SSL hostname diminta',
     'server.hostname_change_started': 'Penggantian hostname dimulai',
