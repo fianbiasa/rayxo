@@ -49,6 +49,7 @@ use App\Http\Controllers\MailModeController;
 use App\Http\Controllers\MailSslController;
 use App\Http\Controllers\PhpMyAdminController;
 use App\Http\Controllers\PointerController;
+use App\Http\Controllers\RedisController;
 use App\Http\Controllers\SftpPasswordController;
 use App\Http\Controllers\SshController;
 use App\Http\Controllers\SubdomainController;
@@ -154,6 +155,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('database-users', [DatabaseUserController::class, 'store'])->name('database-users.store');
         Route::put('database-users/{databaseUser}', [DatabaseUserController::class, 'update'])->name('database-users.update');
         Route::delete('database-users/{databaseUser}', [DatabaseUserController::class, 'destroy'])->name('database-users.destroy');
+        Route::get('redis', [RedisController::class, 'index'])->name('redis.index');
+        Route::post('redis', [RedisController::class, 'store'])->name('redis.store');
+        Route::delete('redis', [RedisController::class, 'destroy'])->name('redis.destroy');
+        Route::post('redis/rotate', [RedisController::class, 'rotate'])->middleware('throttle:10,1,redis-rotate')->name('redis.rotate');
         Route::get('email', [EmailController::class, 'index'])->name('email.index');
         Route::post('email', [EmailController::class, 'store'])->name('email.store');
         Route::put('email/{mailbox}', [EmailController::class, 'update'])->name('email.update');

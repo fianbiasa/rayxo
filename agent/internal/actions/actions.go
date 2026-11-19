@@ -21,6 +21,7 @@ import (
 	"rayxo/agent/internal/procmon"
 	"rayxo/agent/internal/quota"
 	"rayxo/agent/internal/reconfigure"
+	"rayxo/agent/internal/redis"
 	"rayxo/agent/internal/rpc"
 	"rayxo/agent/internal/runner"
 	"rayxo/agent/internal/services"
@@ -125,6 +126,10 @@ func Register(registry *rpc.Registry, config Config) {
 	}
 
 	for name, method := range databaseMethods(sysuser.System{}, databases, transfers, helper) {
+		registry.Register(name, method)
+	}
+
+	for name, method := range redisMethods(sysuser.System{}, redis.New(redis.DefaultConfig())) {
 		registry.Register(name, method)
 	}
 

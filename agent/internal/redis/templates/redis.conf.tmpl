@@ -1,0 +1,14 @@
+# Per-account Redis cache of {{.User}}. Written by rayxod; changes are overwritten.
+# Cache only: no TCP listener, no persistence, reachable only over this
+# account's unix socket in its own 0700 runtime directory.
+port 0
+unixsocket /run/rayxo-redis/{{.User}}/redis.sock
+unixsocketperm 700
+dir /run/rayxo-redis/{{.User}}
+requirepass "{{.Password}}"
+maxmemory {{.MaxMemoryMB}}mb
+maxmemory-policy allkeys-lru
+save ""
+appendonly no
+# Log to stdout so systemd keeps it in the journal.
+logfile ""
