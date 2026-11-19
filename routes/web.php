@@ -400,6 +400,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('server-settings/ioncube', [ServerSettingController::class, 'updateIonCube'])
             ->middleware('throttle:5,1,server-ioncube')
             ->name('server-settings.ioncube');
+        Route::put('server-settings/clamav', [ServerSettingController::class, 'updateClamav'])
+            ->middleware('throttle:5,1,server-clamav')
+            ->name('server-settings.clamav');
+        Route::post('server-settings/clamav/scan', [ServerSettingController::class, 'scanClamav'])
+            ->middleware('throttle:10,1,server-clamav-scan')
+            ->name('server-settings.clamav-scan');
         Route::put('server-settings/php-uploads', [ServerSettingController::class, 'updatePhpUploads'])
             ->middleware('throttle:10,1,server-uploads')
             ->name('server-settings.php-uploads');

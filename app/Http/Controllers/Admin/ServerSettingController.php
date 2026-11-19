@@ -74,6 +74,7 @@ class ServerSettingController extends Controller
             ],
             'database_remote_access' => $this->databaseTools->remoteAccessEnabled(),
             'ioncube' => $this->settings->ionCube(),
+            'clamav' => $this->settings->clamav(),
             'telegram_bot' => $this->telegram->username(),
             'mail_limits' => [
                 ...$this->settings->mailSendLimits(),
@@ -351,6 +352,57 @@ class ServerSettingController extends Controller
         };
 
         Inertia::flash('toast', ['type' => $state['enabled'] || ! $validated['enabled'] ? 'success' : 'warning', 'message' => $message]);
+
+        return back();
+    }
+
+    /**
+     * Turn ClamAV and its scan modes (email, on-access, scheduled) on or off.
+     * The sub-modes only apply while ClamAV itself is on.
+     */
+    public function updateClamav(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'enabled' => ['required', 'boolean'],
+            'email' => ['required', 'boolean'],
+            'on_access' => ['required', 'boolean'],
+            'scheduled' => ['required', 'boolean'],
+        ]);
+
+        $enabled = (bool) $validated['enabled'];
+        $this->settings->setClamav([
+            'enabled' => $enabled,
+            'email' => $enabled && (bool) $validated['email'],
+            'on_access' => $enabled && (bool) $validated['on_access'],
+            'scheduled' => $enabled && (bool) $validated['scheduled'],
+        ], $request->user());
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => $enabled ? __('ClamAV is being turned on; downloading signatures can take a few minutes.') : __('ClamAV is off.'),
+        ]);
+
+        return back();
+    }
+
+    /**
+     * Scan a path under /home now and flash the result.
+     */
+    public function scanClamav(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'path' => ['required', 'string', 'max:255', 'starts_with:/home', 'not_regex:/\.\./'],
+        ]);
+
+        $result = $this->settings->scanClamav($validated['path'], $request->user());
+
+        $count = count($result['infected']);
+        Inertia::flash('toast', [
+            'type' => $result['clean'] ? 'success' : 'warning',
+            'message' => $result['clean']
+                ? __('Scan clean: no viruses in :path.', ['path' => $validated['path']])
+                : __(':count infected file(s) in :path.', ['count' => $count, 'path' => $validated['path']]),
+        ]);
 
         return back();
     }

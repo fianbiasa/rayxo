@@ -1213,6 +1213,15 @@ DEBCONF
     # until the admin enables it, so a fresh install never blocks a port.
     quietly "${apt[@]}" install nftables
 
+    # ClamAV antivirus for the panel's scanning (on-demand, scheduled, email
+    # and on-access). clamd loads a large signature database into memory, so it
+    # stays off until the admin enables ClamAV from the panel; the daemon and
+    # the signature updater must not start during install (configure_clamav
+    # keeps them off, and the agent's clamav.apply starts them on demand).
+    block_service_starts
+    quietly "${apt[@]}" install clamav clamav-daemon clamav-freshclam
+    remove_policy_rc
+
     # GoAccess makes the visitor reports of websites (the agent's stats.report).
     quietly "${apt[@]}" install --no-install-recommends goaccess
 
@@ -3442,6 +3451,19 @@ CRON_SCOPE_PAM_LINE="session optional pam_exec.so quiet $INSTALL_DIR/bin/rayxod 
 # cron opens a PAM session for every job; there rayxod moves the jobs of
 # hosting accounts into rayxo-<user>.slice, so they get the account's
 # resource limits and count in its CPU and memory history like its PHP.
+# configure_clamav keeps ClamAV off after install: the daemon, its socket and
+# the signature updater are stopped and disabled until the admin enables
+# ClamAV from the panel (the agent's clamav.apply then starts them, fetches
+# the signature database, and wires scanning into Rspamd). Installing the
+# packages alone would run clamd, which loads a 1-2 GB database into memory.
+configure_clamav() {
+    step "Menyiapkan ClamAV (mati sampai diaktifkan dari panel)"
+
+    systemctl disable --now clamav-daemon.service clamav-daemon.socket clamav-freshclam.service >/dev/null 2>&1 || true
+
+    info "ClamAV terpasang; nyalakan dari Pengaturan Server saat dibutuhkan"
+}
+
 configure_cron_slices() {
     local file=/etc/pam.d/cron
 
@@ -3932,6 +3954,7 @@ main() {
     configure_logrotate
     configure_cron_slices
     configure_fail2ban
+    configure_clamav
     install_services
     verify_install
     if [[ -n "$restore_file" ]]; then

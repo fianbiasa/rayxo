@@ -35,6 +35,12 @@ class ServerSettingsService
     public const IONCUBE = 'php.ioncube';
 
     /**
+     * ClamAV: the scan modes the admin chose, stored as
+     * {enabled, email, on_access, scheduled} and applied by the agent.
+     */
+    public const CLAMAV = 'clamav';
+
+    /**
      * How many recipients each hosting account may send mail to per 24
      * hours; null is no limit.
      */
@@ -145,6 +151,79 @@ class ServerSettingsService
         $this->audit->record('server.ioncube_changed', null, ['enabled' => $state['enabled'], 'versions' => $state['versions'], 'loader' => $state['loader']], $actor);
 
         return $state;
+    }
+
+    /**
+     * ClamAV: the scan modes the admin chose, as last applied. Read from the
+     * stored setting (no agent call), like ionCube; the live clamd state is
+     * reported back by setClamav when a change is applied.
+     *
+     * @return array{enabled: bool, email: bool, on_access: bool, scheduled: bool}
+     */
+    public function clamav(): array
+    {
+        $saved = (array) ($this->get(self::CLAMAV) ?? []);
+
+        return [
+            'enabled' => (bool) ($saved['enabled'] ?? false),
+            'email' => (bool) ($saved['email'] ?? false),
+            'on_access' => (bool) ($saved['on_access'] ?? false),
+            'scheduled' => (bool) ($saved['scheduled'] ?? false),
+        ];
+    }
+
+    /**
+     * Turn ClamAV and its scan modes on or off. Enabling downloads the
+     * signature database, so this can take a few minutes.
+     *
+     * @param  array{enabled: bool, email: bool, on_access: bool, scheduled: bool}  $settings
+     * @return array{enabled: bool, email: bool, on_access: bool, scheduled: bool}
+     *
+     * @throws ValidationException
+     */
+    public function setClamav(array $settings, User $actor): array
+    {
+        try {
+            $this->agent->call('clamav.apply', $settings, 1200);
+        } catch (AgentException $exception) {
+            throw ValidationException::withMessages(['enabled' => __('ClamAV could not be changed: :message', ['message' => $exception->getMessage()])]);
+        }
+
+        $this->put(self::CLAMAV, $settings);
+        $this->audit->record('server.clamav_changed', null, $settings, $actor);
+
+        return $this->clamav();
+    }
+
+    /**
+     * Scan a path under /home now and return what was found.
+     *
+     * @return array{clean: bool, infected: list<array{file: string, virus: string}>}
+     *
+     * @throws ValidationException
+     */
+    public function scanClamav(string $path, User $actor): array
+    {
+        try {
+            $result = (array) $this->agent->call('clamav.scan', ['path' => $path], 1800);
+        } catch (AgentException $exception) {
+            throw ValidationException::withMessages(['path' => __('The scan could not run: :message', ['message' => $exception->getMessage()])]);
+        }
+
+        $infected = array_values(array_map(
+            fn (array $item): array => [
+                'file' => (string) ($item['file'] ?? ''),
+                'virus' => (string) ($item['virus'] ?? ''),
+            ],
+            array_filter((array) ($result['infected'] ?? []), 'is_array'),
+        ));
+
+        $this->audit->record('server.clamav_scanned', null, ['path' => $path, 'infected' => count($infected)], $actor);
+
+        return [
+            'clean' => ($result['clean'] ?? false) === true,
+            'infected' => $infected,
+        ];
     }
 
     /**
