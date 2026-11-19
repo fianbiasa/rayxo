@@ -980,8 +980,8 @@ function ClamavPanel({ clamav }: { clamav: Clamav }) {
                         </Button>
                         <p className="w-full text-xs text-muted-foreground">
                             Mengaktifkan mengunduh database signature (~300 MB)
-                            dan menjalankan clamd (perlu ~1–2 GB RAM); bisa makan
-                            beberapa menit.
+                            dan menjalankan clamd (perlu ~1–2 GB RAM); bisa
+                            makan beberapa menit.
                         </p>
                     </>
                 )}
