@@ -10,6 +10,7 @@ import {
     Cpu,
     FileCog,
     Database,
+    DatabaseZap,
     FolderOpen,
     FolderUp,
     Globe,
@@ -35,6 +36,7 @@ import { dashboard } from '@/routes';
 import { index as backupsIndex } from '@/routes/backups';
 import { index as cronJobsIndex } from '@/routes/cron-jobs';
 import { index as databasesIndex } from '@/routes/databases';
+import { index as redisIndex } from '@/routes/redis';
 import { index as dnsIndex } from '@/routes/dns';
 import { index as accountsIndex } from '@/routes/admin/accounts';
 import { index as auditLogsIndex } from '@/routes/admin/audit-logs';
@@ -264,6 +266,11 @@ export function useNavigation(): {
             href: databasesIndex(),
             icon: Database,
         };
+        const redis: NavItem = {
+            title: 'Redis',
+            href: redisIndex(),
+            icon: DatabaseZap,
+        };
         const files: NavItem = {
             title: 'File Manager',
             href: filesIndex(),
@@ -304,6 +311,7 @@ export function useNavigation(): {
                 email,
                 files,
                 databases,
+                redis,
                 ftp,
                 ssh,
                 cronJobs,

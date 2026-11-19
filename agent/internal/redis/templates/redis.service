@@ -1,0 +1,24 @@
+# Per-account Redis cache; the instance name is the account username, e.g.
+# rayxo-redis@budi.service. Written by rayxod; changes are overwritten.
+[Unit]
+Description=Redis cache of %i (rayxo)
+After=network.target
+ConditionPathExists={{.ConfDir}}/%i.conf
+
+[Service]
+Type=notify
+User=%i
+Group=%i
+# Counts against the account's CPU and memory limits, like its PHP pools.
+Slice=rayxo-%i.slice
+# As root, make the per-account socket directory (0700, owned by the account)
+# before dropping privileges; the shared parent stays root-owned and is only
+# traversable, so no account can reach another's socket.
+ExecStartPre=+/usr/bin/install -d -m 0755 -o root -g root /run/rayxo-redis
+ExecStartPre=+/usr/bin/install -d -m 0700 -o %i -g %i /run/rayxo-redis/%i
+ExecStart=/usr/bin/redis-server {{.ConfDir}}/%i.conf --supervised systemd
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

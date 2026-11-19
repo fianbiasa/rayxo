@@ -28,7 +28,7 @@ readonly DEFAULT_SITE_PHP_VERSIONS="7.4 8.0 8.1 8.2 8.3 8.4 8.5"
 # How many release trees to keep under releases/ (the active one and one
 # previous); older trees are removed after a successful install (prune_releases).
 readonly RELEASES_KEEP=2
-readonly SITE_PHP_PACKAGES="fpm cli common mysql sqlite3 mbstring xml curl intl zip bcmath opcache readline gd imagick soap"
+readonly SITE_PHP_PACKAGES="fpm cli common mysql sqlite3 mbstring xml curl intl zip bcmath opcache readline gd imagick soap redis"
 readonly PANEL_USER="rayxo"
 # The panel's port: 2222 unless chosen otherwise (--panel-port, or from the
 # panel), remembered in PANEL_PORT_FILE for later runs.

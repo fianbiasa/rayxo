@@ -191,6 +191,16 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     }
 
     /**
+     * The per-account Redis cache of this hosting account, if it has one.
+     *
+     * @return HasOne<RedisInstance, $this>
+     */
+    public function redisInstance(): HasOne
+    {
+        return $this->hasOne(RedisInstance::class);
+    }
+
+    /**
      * The DNS zones of this hosting account.
      *
      * @return HasMany<DnsZone, $this>
