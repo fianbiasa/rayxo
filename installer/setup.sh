@@ -3451,13 +3451,25 @@ CRON_SCOPE_PAM_LINE="session optional pam_exec.so quiet $INSTALL_DIR/bin/rayxod 
 # cron opens a PAM session for every job; there rayxod moves the jobs of
 # hosting accounts into rayxo-<user>.slice, so they get the account's
 # resource limits and count in its CPU and memory history like its PHP.
-# configure_clamav keeps ClamAV off after install: the daemon, its socket and
-# the signature updater are stopped and disabled until the admin enables
-# ClamAV from the panel (the agent's clamav.apply then starts them, fetches
-# the signature database, and wires scanning into Rspamd). Installing the
-# packages alone would run clamd, which loads a 1-2 GB database into memory.
+# configure_clamav keeps ClamAV off after a fresh install: the daemon, its
+# socket and the signature updater are stopped and disabled until the admin
+# enables ClamAV from the panel (the agent's clamav.apply then starts them,
+# fetches the signature database, and wires scanning into Rspamd). Installing
+# the packages alone would run clamd, which loads a 1-2 GB database into memory.
+#
+# It must NOT turn ClamAV off on an upgrade: if the admin has already enabled
+# it, clamd is running here, and disabling it would silently break the feature
+# (Rspamd and the scan timer would keep pointing at a dead clamd). So leave a
+# running clamd alone; only disable when it is not active (a fresh install,
+# where block_service_starts kept the package's own start from taking effect).
 configure_clamav() {
-    step "Menyiapkan ClamAV (mati sampai diaktifkan dari panel)"
+    step "Menyiapkan ClamAV"
+
+    if systemctl is-active --quiet clamav-daemon.service; then
+        info "ClamAV sedang aktif; dibiarkan menyala (diatur dari panel)"
+
+        return
+    fi
 
     systemctl disable --now clamav-daemon.service clamav-daemon.socket clamav-freshclam.service >/dev/null 2>&1 || true
 
