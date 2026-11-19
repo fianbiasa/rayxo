@@ -107,11 +107,31 @@ function ConnectionPanels({ connection }: { connection: Connection }) {
                 action={<StatusBadge status="active" label="Aktif" />}
             >
                 <dl className="grid gap-4 sm:grid-cols-2">
-                    <Row label="Host (socket)" value={connection.host} onCopy={copy} />
-                    <Row label="Port" value={String(connection.port)} onCopy={copy} />
-                    <Row label="Password" value={connection.password} onCopy={copy} />
-                    <Row label="Prefix kunci" value={connection.prefix} onCopy={copy} />
-                    <Row label="Client" value={connection.client} onCopy={copy} />
+                    <Row
+                        label="Host (socket)"
+                        value={connection.host}
+                        onCopy={copy}
+                    />
+                    <Row
+                        label="Port"
+                        value={String(connection.port)}
+                        onCopy={copy}
+                    />
+                    <Row
+                        label="Password"
+                        value={connection.password}
+                        onCopy={copy}
+                    />
+                    <Row
+                        label="Prefix kunci"
+                        value={connection.prefix}
+                        onCopy={copy}
+                    />
+                    <Row
+                        label="Client"
+                        value={connection.client}
+                        onCopy={copy}
+                    />
                     <Row
                         label="Batas memori"
                         value={`${connection.max_memory_mb} MB`}
@@ -159,7 +179,10 @@ function ConnectionPanels({ connection }: { connection: Connection }) {
                             </Button>
                         )}
                     </Form>
-                    <Form {...destroy.form()} options={{ preserveScroll: true }}>
+                    <Form
+                        {...destroy.form()}
+                        options={{ preserveScroll: true }}
+                    >
                         {({ processing }) => (
                             <Button
                                 type="submit"
