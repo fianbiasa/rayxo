@@ -354,6 +354,39 @@ type Site struct {
 	// pool and no Apache vhost.
 	NodeApp  bool
 	NodePort int
+	// ModSecurity overrides the global ModSecurity (WAF) engine state for the
+	// site; empty inherits the server-wide default.
+	ModSecurity ModSecurityMode
+}
+
+// ModSecurityMode overrides the global ModSecurity (WAF) engine state for one
+// site. Empty inherits the server-wide default.
+type ModSecurityMode string
+
+const (
+	// ModSecurityInherit uses the server-wide default engine state.
+	ModSecurityInherit ModSecurityMode = ""
+	// ModSecurityOff turns the WAF off for the site.
+	ModSecurityOff ModSecurityMode = "off"
+	// ModSecurityDetection runs the rules but only logs, never blocks.
+	ModSecurityDetection ModSecurityMode = "detection"
+	// ModSecurityOn runs the rules and blocks offending requests.
+	ModSecurityOn ModSecurityMode = "on"
+)
+
+// EngineDirective is the SecRuleEngine value for the mode, or "" when the site
+// inherits the server-wide default (so the vhost emits no override).
+func (m ModSecurityMode) EngineDirective() string {
+	switch m {
+	case ModSecurityOff:
+		return "Off"
+	case ModSecurityDetection:
+		return "DetectionOnly"
+	case ModSecurityOn:
+		return "On"
+	default:
+		return ""
+	}
 }
 
 // kind returns the Kind of the site, KindDomain when it is not set.
@@ -400,6 +433,12 @@ func (s Site) Validate() error {
 	case "", WWWBoth, WWWOnly, WWWBare:
 	default:
 		return fmt.Errorf("www mode %q must be both, www or bare", s.WWW)
+	}
+
+	switch s.ModSecurity {
+	case ModSecurityInherit, ModSecurityOff, ModSecurityDetection, ModSecurityOn:
+	default:
+		return fmt.Errorf("modsecurity mode %q must be off, detection or on", s.ModSecurity)
 	}
 
 	if _, err := checkRoot(s.Root); err != nil {

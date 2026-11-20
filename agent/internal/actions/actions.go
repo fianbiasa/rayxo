@@ -33,6 +33,7 @@ import (
 	"rayxo/agent/internal/sysinfo"
 	"rayxo/agent/internal/sysuser"
 	"rayxo/agent/internal/version"
+	"rayxo/agent/internal/waf"
 	"rayxo/agent/internal/webserver"
 )
 
@@ -215,6 +216,10 @@ func Register(registry *rpc.Registry, config Config) {
 	}
 
 	for name, method := range clamavMethods(clamav.New(clamav.DefaultConfig())) {
+		registry.Register(name, method)
+	}
+
+	for name, method := range wafMethods(waf.New(waf.DefaultConfig())) {
 		registry.Register(name, method)
 	}
 }

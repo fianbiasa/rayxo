@@ -24,7 +24,7 @@ import { formatBytes, formatDateTime } from '@/lib/format';
 import { index as domainsIndex, statistics } from '@/routes/domains';
 import { download, show } from '@/routes/domains/logs';
 
-type Kind = 'access' | 'error' | 'apache-error';
+type Kind = 'access' | 'error' | 'apache-error' | 'modsec_audit';
 
 type Log = {
     lines: string[];
@@ -58,6 +58,11 @@ const kindLabels: Record<Kind, { title: string; description: string }> = {
         title: 'Error PHP',
         description:
             'Error dari Apache dan PHP: pesan error, peringatan, dan skrip yang gagal.',
+    },
+    modsec_audit: {
+        title: 'ModSecurity (WAF)',
+        description:
+            'Permintaan yang dicocokkan aturan WAF (OWASP CRS): yang diblokir, atau yang tercatat saja di mode deteksi. Kosong kalau ModSecurity mati untuk domain ini.',
     },
 };
 

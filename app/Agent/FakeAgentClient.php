@@ -82,6 +82,8 @@ final class FakeAgentClient implements AgentClient
                 'simulated' => true,
             ],
             'clamav.scan' => ['clean' => true, 'infected' => [], 'simulated' => true],
+            'waf.status' => ['mode' => 'off', 'simulated' => true],
+            'waf.apply' => ['mode' => in_array($params['mode'] ?? 'off', ['off', 'detection', 'on'], true) ? $params['mode'] : 'off', 'simulated' => true],
             'nodeapp.provision', 'nodeapp.deprovision', 'nodeapp.restart' => ['simulated' => true],
             'nodeapp.status' => ['running' => true, 'simulated' => true],
             'fs.list' => $this->fileListing((string) ($params['username'] ?? ''), (string) ($params['path'] ?? '')),

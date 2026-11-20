@@ -58,6 +58,7 @@ import {
     securityPolicy as updateSecurityPolicy,
     telegram as updateTelegram,
     timezone as updateTimezone,
+    waf as updateWaf,
 } from '@/routes/admin/server-settings';
 import { destroy as removeTelegram } from '@/routes/admin/server-settings/telegram';
 import {
@@ -114,9 +115,12 @@ type Props = {
     database_remote_access: boolean;
     ioncube: IonCube;
     clamav: Clamav;
+    waf: Waf;
     telegram_bot: string | null;
     security_policy: SecurityPolicy;
 };
+
+type Waf = { mode: 'off' | 'detection' | 'on' };
 
 type IonCube = {
     enabled: boolean;
@@ -160,6 +164,7 @@ export default function ServerSettings({
     database_remote_access,
     ioncube,
     clamav,
+    waf,
     telegram_bot,
     security_policy,
 }: Props) {
@@ -246,6 +251,7 @@ export default function ServerSettings({
 
             <IonCubePanel ioncube={ioncube} />
             <ClamavPanel clamav={clamav} />
+            <WafPanel waf={waf} />
 
             <TelegramPanel bot={telegram_bot} />
 
@@ -942,6 +948,81 @@ function TelegramPanel({ bot }: { bot: string | null }) {
  * needs. It is ionCube's own software, downloaded from ionCube only once
  * the administrator turns it on.
  */
+function WafPanel({ waf }: { waf: Waf }) {
+    const [mode, setMode] = useState<Waf['mode']>(waf.mode);
+
+    const badge: Record<Waf['mode'], { status: string; label: string }> = {
+        on: { status: 'active', label: 'Aktif' },
+        detection: { status: 'suspended', label: 'Deteksi saja' },
+        off: { status: 'neutral', label: 'Mati' },
+    };
+
+    const options: { value: Waf['mode']; label: string }[] = [
+        { value: 'off', label: 'Mati' },
+        { value: 'detection', label: 'Deteksi saja (catat, tidak blokir)' },
+        { value: 'on', label: 'Aktif (blokir)' },
+    ];
+
+    return (
+        <Panel
+            title="ModSecurity (WAF)"
+            description="Firewall aplikasi web dengan OWASP Core Rule Set, melindungi situs dari SQLi, XSS, dan serangan web umum. Ini mode bawaan untuk semua website; tiap domain bisa menimpanya di Pengaturan web. Mulai dari 'Deteksi saja' untuk melihat false-positive di log audit sebelum benar-benar memblokir."
+        >
+            <Form
+                {...updateWaf.form()}
+                options={{ preserveScroll: true }}
+                className="flex flex-wrap items-center gap-4"
+            >
+                {({ processing, errors }) => (
+                    <>
+                        <StatusBadge
+                            status={badge[waf.mode].status}
+                            label={badge[waf.mode].label}
+                        />
+                        <input type="hidden" name="mode" value={mode} />
+                        <Select
+                            value={mode}
+                            onValueChange={(value) =>
+                                setMode(value as Waf['mode'])
+                            }
+                        >
+                            <SelectTrigger
+                                id="waf-mode"
+                                aria-invalid={errors.mode ? true : undefined}
+                                className="w-72 rounded-xl bg-card px-3.5 data-[size=default]:h-11"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                                {options.map((option) => (
+                                    <SelectItem
+                                        key={option.value}
+                                        value={option.value}
+                                    >
+                                        {option.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <Button
+                            type="submit"
+                            disabled={processing || mode === waf.mode}
+                        >
+                            {processing ? <Spinner /> : <ShieldCheck />}
+                            Simpan mode
+                        </Button>
+                        {errors.mode && (
+                            <p className="w-full text-xs text-destructive">
+                                {errors.mode}
+                            </p>
+                        )}
+                    </>
+                )}
+            </Form>
+        </Panel>
+    );
+}
+
 function ClamavPanel({ clamav }: { clamav: Clamav }) {
     const s = clamav;
     const base = {

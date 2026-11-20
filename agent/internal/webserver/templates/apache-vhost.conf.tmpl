@@ -27,6 +27,17 @@
     IncludeOptional {{.CustomApache}}
 {{- end}}
 
+    # Web application firewall (ModSecurity). The audit log is per-domain, so the
+    # account reads its WAF events from the log viewer; the engine state follows
+    # the server-wide default unless this website overrides it. The IfModule
+    # guard keeps the vhost valid on a server where the module is not loaded.
+    <IfModule security2_module>
+        SecAuditLog {{.ModSecAuditLog}}
+{{- if .ModSecEngine}}
+        SecRuleEngine {{.ModSecEngine}}
+{{- end}}
+    </IfModule>
+
 {{- if .PHP}}
 
     DirectoryIndex index.php index.html index.htm

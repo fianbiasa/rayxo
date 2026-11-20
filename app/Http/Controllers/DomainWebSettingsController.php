@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\DomainType;
+use App\Enums\ModSecurityMode;
 use App\Enums\PointerMode;
 use App\Http\Requests\NodeAppRequest;
 use App\Http\Requests\SaveErrorPageRequest;
@@ -12,6 +13,7 @@ use App\Http\Requests\UpdateCgiRequest;
 use App\Http\Requests\UpdateDomainLimitsRequest;
 use App\Http\Requests\UpdateHotlinkRequest;
 use App\Http\Requests\UpdateMimeTypesRequest;
+use App\Http\Requests\UpdateModSecurityRequest;
 use App\Http\Requests\UpdatePhpExtensionsRequest;
 use App\Http\Requests\UpdateProtectedLoginRequest;
 use App\Models\Domain;
@@ -19,6 +21,7 @@ use App\Models\ProtectedDirectory;
 use App\Models\ProtectedDirectoryUser;
 use App\Services\BandwidthService;
 use App\Services\DomainLimitService;
+use App\Services\ServerSettingsService;
 use App\Services\WebSettingsService;
 use App\Support\AccountLimits;
 use App\Support\WebSettings;
@@ -38,6 +41,7 @@ class DomainWebSettingsController extends Controller
     public function __construct(
         private WebSettingsService $settings,
         private DomainLimitService $limits,
+        private ServerSettingsService $serverSettings,
     ) {}
 
     /**
@@ -91,6 +95,10 @@ class DomainWebSettingsController extends Controller
             'cgi' => [
                 'enabled' => $domain->cgi_enabled,
                 'allowed' => AccountLimits::for($domain->account)->allowsCgi(),
+            ],
+            'modsecurity' => [
+                'mode' => $domain->modsecurity_mode->value,
+                'global' => $this->serverSettings->waf()['mode'],
             ],
             'node_app' => $this->nodeAppProps($domain),
             'options' => [
@@ -260,6 +268,17 @@ class DomainWebSettingsController extends Controller
         return $this->applied($enabled
             ? __('CGI is being turned on for :domain.', ['domain' => $domain->display_name])
             : __('CGI is being turned off for :domain.', ['domain' => $domain->display_name]));
+    }
+
+    /**
+     * Set the website's ModSecurity (WAF) override, or let it follow the
+     * server-wide default.
+     */
+    public function updateModSecurity(UpdateModSecurityRequest $request, Domain $domain): RedirectResponse
+    {
+        $this->settings->setModSecurity($domain, ModSecurityMode::from($request->validated('mode')), $request->user());
+
+        return $this->applied(__('The ModSecurity setting of :domain is being applied.', ['domain' => $domain->display_name]));
     }
 
     /**

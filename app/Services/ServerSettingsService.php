@@ -41,6 +41,18 @@ class ServerSettingsService
     public const CLAMAV = 'clamav';
 
     /**
+     * ModSecurity (WAF): the server-wide engine mode the admin chose
+     * ('off', 'detection' or 'on'), applied by the agent and used as the
+     * default for every website that does not override it.
+     */
+    public const WAF = 'waf';
+
+    /**
+     * The ModSecurity modes the admin may choose.
+     */
+    public const WAF_MODES = ['off', 'detection', 'on'];
+
+    /**
      * How many recipients each hosting account may send mail to per 24
      * hours; null is no limit.
      */
@@ -193,6 +205,40 @@ class ServerSettingsService
         $this->audit->record('server.clamav_changed', null, $settings, $actor);
 
         return $this->clamav();
+    }
+
+    /**
+     * The server-wide ModSecurity (WAF) mode: 'off', 'detection' or 'on'.
+     *
+     * @return array{mode: string}
+     */
+    public function waf(): array
+    {
+        $saved = (array) ($this->get(self::WAF) ?? []);
+        $mode = (string) ($saved['mode'] ?? 'off');
+
+        return ['mode' => in_array($mode, self::WAF_MODES, true) ? $mode : 'off'];
+    }
+
+    /**
+     * Set the server-wide ModSecurity mode and have the agent apply it.
+     *
+     * @return array{mode: string}
+     *
+     * @throws ValidationException
+     */
+    public function setWaf(string $mode, User $actor): array
+    {
+        try {
+            $this->agent->call('waf.apply', ['mode' => $mode], 180);
+        } catch (AgentException $exception) {
+            throw ValidationException::withMessages(['mode' => __('ModSecurity could not be changed: :message', ['message' => $exception->getMessage()])]);
+        }
+
+        $this->put(self::WAF, ['mode' => $mode]);
+        $this->audit->record('server.waf_changed', null, ['mode' => $mode], $actor);
+
+        return $this->waf();
     }
 
     /**

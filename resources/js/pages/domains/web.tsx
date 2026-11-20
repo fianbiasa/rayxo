@@ -28,6 +28,13 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { index as domainsIndex } from '@/routes/domains';
@@ -38,6 +45,7 @@ import {
 import { formatDateTime } from '@/lib/format';
 import { update as updateCgi } from '@/routes/domains/cgi';
 import { update as updateLimits } from '@/routes/domains/limits';
+import { update as updateModSecurity } from '@/routes/domains/modsecurity';
 import {
     destroy as disableNodeApp,
     restart as restartNodeApp,
@@ -102,6 +110,10 @@ type Props = {
     mime_types: MimeType[];
     php_extensions: string[];
     cgi: { enabled: boolean; allowed: boolean };
+    modsecurity: {
+        mode: 'inherit' | 'off' | 'detection' | 'on';
+        global: 'off' | 'detection' | 'on';
+    };
     node_app: NodeApp;
     limits: {
         bandwidth_limit_mb: number | null;
@@ -174,6 +186,7 @@ export default function DomainWebSettings({
     mime_types,
     php_extensions,
     cgi,
+    modsecurity,
     node_app,
     limits,
     options,
@@ -289,6 +302,11 @@ export default function DomainWebSettings({
                     limits={limits}
                 />
                 <CgiPanel domain={domain} cgi={cgi} />
+                <ModSecurityPanel
+                    key={modsecurity.mode}
+                    domain={domain}
+                    modsecurity={modsecurity}
+                />
             </div>
 
             <NodeAppPanel
@@ -1417,6 +1435,83 @@ function CgiPanel({
                             </p>
                         )}
                         <InputError message={errors.cgi_enabled} />
+                    </>
+                )}
+            </Form>
+        </Panel>
+    );
+}
+
+function ModSecurityPanel({
+    domain,
+    modsecurity,
+}: {
+    domain: Props['domain'];
+    modsecurity: Props['modsecurity'];
+}) {
+    const [mode, setMode] = useState(modsecurity.mode);
+
+    const globalLabel: Record<string, string> = {
+        off: 'mati',
+        detection: 'deteksi saja',
+        on: 'aktif',
+    };
+
+    const options: { value: Props['modsecurity']['mode']; label: string }[] = [
+        {
+            value: 'inherit',
+            label: `Ikuti server (${globalLabel[modsecurity.global] ?? modsecurity.global})`,
+        },
+        { value: 'off', label: 'Mati' },
+        { value: 'detection', label: 'Deteksi saja (catat, tidak blokir)' },
+        { value: 'on', label: 'Aktif (blokir)' },
+    ];
+
+    return (
+        <Panel
+            title="ModSecurity (WAF)"
+            description="Firewall aplikasi web (OWASP CRS) untuk website ini: lindungi dari SQLi, XSS, dan serangan umum. Ikuti setelan server atau tentukan sendiri; yang tercocok tampil di log 'ModSecurity (WAF)' pada halaman Log & statistik."
+        >
+            <Form
+                {...updateModSecurity.form(domain.id)}
+                options={{ preserveScroll: true }}
+                className="flex flex-wrap items-center gap-4"
+            >
+                {({ processing, errors }) => (
+                    <>
+                        <input type="hidden" name="mode" value={mode} />
+                        <Select
+                            value={mode}
+                            onValueChange={(value) =>
+                                setMode(value as Props['modsecurity']['mode'])
+                            }
+                        >
+                            <SelectTrigger
+                                id="modsecurity-mode"
+                                aria-invalid={errors.mode ? true : undefined}
+                                className="w-72 rounded-xl bg-card px-3.5 data-[size=default]:h-11"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                                {options.map((option) => (
+                                    <SelectItem
+                                        key={option.value}
+                                        value={option.value}
+                                    >
+                                        {option.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <Button
+                            type="submit"
+                            disabled={processing || mode === modsecurity.mode}
+                        >
+                            {processing && <Spinner />}
+                            Simpan
+                        </Button>
+                        <InputError message={errors.mode} />
                     </>
                 )}
             </Form>

@@ -94,6 +94,13 @@ type siteData struct {
 	// of to Apache; NodeProxyTo is that app's localhost address.
 	NodeApp     bool
 	NodeProxyTo string
+	// ModSecEngine is the SecRuleEngine value for a per-site WAF override
+	// ("Off", "DetectionOnly" or "On"); empty inherits the server-wide
+	// default, so the vhost emits no override.
+	ModSecEngine string
+	// ModSecAuditLog is the per-domain ModSecurity audit log path, so events
+	// land in a file the account can read from the log viewer.
+	ModSecAuditLog string
 }
 
 // staticData is what the template of the static files location sees.
@@ -241,6 +248,8 @@ func (m *Manager) siteData(site Site) siteData {
 		Suspended:         site.Suspended,
 		NodeApp:           site.NodeApp,
 		NodeProxyTo:       nodeProxyTo(site),
+		ModSecEngine:      site.ModSecurity.EngineDirective(),
+		ModSecAuditLog:    filepath.Join(m.cfg.LogDir, site.Domain+".modsec_audit.log"),
 		CustomNginx:       m.cfg.CustomNginx,
 		CustomApache:      m.cfg.CustomApache,
 	}
