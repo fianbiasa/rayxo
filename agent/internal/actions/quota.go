@@ -158,6 +158,30 @@ func (a accountActions) setQuota(ctx context.Context, raw json.RawMessage) (any,
 	return setQuotaResult{Applied: applied}, nil
 }
 
+// checkSlice implements account.check_slice: report whether the account's
+// resource-limit slice files drifted, without writing. Disk quota is a
+// filesystem attribute, not a config file, so it is not checked here.
+func (a accountActions) checkSlice(ctx context.Context, raw json.RawMessage) (any, error) {
+	params, err := decodeSetQuotaParams(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := a.requireAccount(ctx, params.Username)
+	if err != nil {
+		return nil, err
+	}
+
+	limits, _ := params.resourceLimits()
+
+	report, err := a.limits.Check(user.Name, user.UID, limits)
+	if err != nil {
+		return nil, err
+	}
+
+	return report, nil
+}
+
 // quotaReport implements quota.report: the disk usage and limits of every
 // rayxo account, sorted by username. Accounts without a quota entry use
 // nothing and have no limits. When user quotas are off, enabled is false

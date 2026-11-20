@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"rayxo/agent/internal/cgroup"
+	"rayxo/agent/internal/drift"
 	"rayxo/agent/internal/quota"
 	"rayxo/agent/internal/rpc"
 	"rayxo/agent/internal/sysuser"
@@ -109,6 +110,9 @@ type accountLimits interface {
 	// Apply sets the limits of the account, or removes them when there are
 	// none.
 	Apply(ctx context.Context, user string, uid int, limits cgroup.Limits) error
+	// Check reports whether the account's resource-limit files on disk differ
+	// from what the limits would write, without changing them.
+	Check(user string, uid int, limits cgroup.Limits) (drift.Report, error)
 	// Remove deletes the limits of an account about to be deleted; a uid of
 	// 0 is an account whose user is already gone.
 	Remove(ctx context.Context, user string, uid int) error
@@ -151,6 +155,7 @@ func accountMethods(system accountSystem, web accountWeb, quotas accountQuota, d
 		"account.unsuspend":    {Handler: accounts.unsuspend, LockKey: accountLockKey},
 		"account.delete":       {Handler: accounts.remove, LockKey: accountLockKey},
 		"account.set_quota":    {Handler: accounts.setQuota, LockKey: setQuotaLockKey},
+		"account.check_slice":  {Handler: accounts.checkSlice, LockKey: setQuotaLockKey},
 		"account.set_password": {Handler: accounts.setPassword, LockKey: webLockKey[setPasswordParams]},
 		"quota.report":         {Handler: accounts.quotaReport},
 	}

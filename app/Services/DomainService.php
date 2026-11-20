@@ -932,6 +932,30 @@ class DomainService
     }
 
     /**
+     * Queue a drift check (render + compare, no write) of every active
+     * website, for the config-drift scan.
+     */
+    public function checkAll(?User $actor = null): int
+    {
+        $queued = 0;
+
+        Domain::query()
+            ->with(['account.ipv4Address', 'account.ipv6Address', 'parent.protectedDirectories.logins', 'urlRedirects', 'protectedDirectories.logins'])
+            ->where('status', DomainStatus::Active)
+            ->whereHas('account', fn (Builder $query) => $query->whereIn('status', [
+                AccountStatus::Active,
+                AccountStatus::Suspended,
+            ]))
+            ->orderBy('id')
+            ->each(function (Domain $domain) use ($actor, &$queued): void {
+                $this->dispatchApply($domain, $domain->account, $actor, 'web.check_domain');
+                $queued++;
+            });
+
+        return $queued;
+    }
+
+    /**
      * Queue the configuration of every website of the account again, e.g.
      * after its addresses changed. Each is pending until the agent applied
      * it; websites that are being deleted are left alone. Callers hold a
@@ -1009,7 +1033,7 @@ class DomainService
      * it does and which domain it belongs to; redirects are only sent when
      * there are any, so the payload of a plain website stays as it was.
      */
-    private function dispatchApply(Domain $domain, User $account, ?User $actor): void
+    private function dispatchApply(Domain $domain, User $account, ?User $actor, string $action = 'web.apply_domain'): void
     {
         $ssl = $domain->hasActiveSsl();
 
@@ -1112,7 +1136,7 @@ class DomainService
             $params['ipv6'] = $account->ipv6Address->address;
         }
 
-        $this->tasks->dispatch('web.apply_domain', $params, $account, $actor);
+        $this->tasks->dispatch($action, $params, $account, $actor);
     }
 
     /**

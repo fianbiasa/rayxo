@@ -14,8 +14,30 @@ import (
 	"rayxo/agent/internal/panelport"
 	"rayxo/agent/internal/reconfigure"
 	"rayxo/agent/internal/rpc"
+	"rayxo/agent/internal/updater"
 	"rayxo/agent/internal/webserver"
 )
+
+// fakeUpdater plays the one-click panel updater.
+type fakeUpdater struct {
+	started  []updater.Target
+	startErr error
+	state    *updater.State
+}
+
+func (f *fakeUpdater) Start(_ context.Context, target updater.Target) error {
+	if f.startErr != nil {
+		return f.startErr
+	}
+
+	f.started = append(f.started, target)
+
+	return nil
+}
+
+func (f *fakeUpdater) Status(context.Context) (*updater.State, error) {
+	return f.state, nil
+}
 
 // fakeHostname plays the server's certificate, clock and setup.sh.
 type fakeHostname struct {
@@ -124,9 +146,15 @@ func (f *fakeHostname) SetTimezone(_ context.Context, timezone string) error {
 func callSystem(t *testing.T, fake *fakeHostname, method string, params any) (map[string]any, error) {
 	t.Helper()
 
+	return callSystemWith(t, fake, &fakeUpdater{}, method, params)
+}
+
+func callSystemWith(t *testing.T, fake *fakeHostname, up *fakeUpdater, method string, params any) (map[string]any, error) {
+	t.Helper()
+
 	raw, _ := json.Marshal(params)
 
-	result, err := systemMethods(fake, fake, fake, fake)[method].Handler(context.Background(), raw)
+	result, err := systemMethods(fake, fake, fake, fake, up)[method].Handler(context.Background(), raw)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +173,7 @@ func TestSystemMethodsAreRegistered(t *testing.T) {
 	registry := rpc.NewRegistry()
 	Register(registry, Config{})
 
-	for _, name := range []string{"system.settings", "system.set_timezone", "ssl.issue_hostname", "system.change_hostname", "panel.port_trial", "panel.port_confirm", "panel.port_cancel"} {
+	for _, name := range []string{"system.settings", "system.set_timezone", "ssl.issue_hostname", "system.change_hostname", "system.update", "panel.port_trial", "panel.port_confirm", "panel.port_cancel"} {
 		if !slices.Contains(registry.Names(), name) {
 			t.Errorf("%s is not registered", name)
 		}
@@ -268,6 +296,55 @@ func TestSystemSettingsReportTheLatestHostnameChange(t *testing.T) {
 	change, _ := settings["reconfigure"].(map[string]any)
 	if change["hostname"] != "server2.example.net" || change["exit_code"] != float64(1) || change["error"] != "A record belum ada" {
 		t.Fatalf("reconfigure = %v", settings["reconfigure"])
+	}
+}
+
+func TestSystemUpdateStartsAndReportsStatus(t *testing.T) {
+	fake := &fakeHostname{timezone: "UTC"}
+	up := &fakeUpdater{}
+
+	const url = "https://github.com/fianbiasa/rayxo/releases/download/v0.9.0/setup.sh"
+
+	result, err := callSystemWith(t, fake, up, "system.update", map[string]any{"version": "0.9.0", "setup_url": url})
+	if err != nil || result["version"] != "0.9.0" {
+		t.Fatalf("result = %v, %v", result, err)
+	}
+
+	if len(up.started) != 1 || up.started[0] != (updater.Target{Version: "0.9.0", SetupURL: url}) {
+		t.Fatalf("started = %+v", up.started)
+	}
+
+	// A run already going is reported as busy.
+	up.startErr = updater.ErrRunning
+	_, err = callSystemWith(t, fake, up, "system.update", map[string]any{"version": "0.9.0", "setup_url": url})
+
+	var rpcErr *rpc.Error
+	if !errors.As(err, &rpcErr) || rpcErr.Data == nil || rpcErr.Data.(map[string]string)["reason"] != "busy" {
+		t.Fatalf("err = %v, want reason busy", err)
+	}
+
+	// A URL that is not a RAYXO release is invalid params.
+	up.startErr = updater.ErrInvalidURL
+	_, err = callSystemWith(t, fake, up, "system.update", map[string]any{"version": "0.9.0", "setup_url": "https://evil.test/setup.sh"})
+
+	if !errors.As(err, &rpcErr) || rpcErr.Code != rpc.CodeInvalidParams {
+		t.Fatalf("err = %v, want invalid params", err)
+	}
+}
+
+func TestSystemSettingsReportTheLatestUpdate(t *testing.T) {
+	code := 0
+	fake := &fakeHostname{timezone: "UTC"}
+	up := &fakeUpdater{state: &updater.State{Version: "0.9.0", ExitCode: &code, Log: []string{"selesai"}}}
+
+	settings, err := callSystemWith(t, fake, up, "system.settings", map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	update, _ := settings["update"].(map[string]any)
+	if update["version"] != "0.9.0" || update["exit_code"] != float64(0) {
+		t.Fatalf("update = %v", settings["update"])
 	}
 }
 

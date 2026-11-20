@@ -167,15 +167,39 @@ class NodeAppService
             ], $account, $actor));
     }
 
-    private function dispatchProvision(Domain $domain, NodeApp $app, ?User $actor): void
+    private function dispatchProvision(Domain $domain, NodeApp $app, ?User $actor, string $action = 'nodeapp.provision'): void
     {
-        $this->tasks->dispatch('nodeapp.provision', [
+        $this->tasks->dispatch($action, [
             'username' => $domain->account->username,
             'domain' => $domain->name,
             'entry' => $app->entry,
             'env' => (object) ($app->env ?? []),
             'port' => $app->port,
         ], $domain->account, $actor);
+    }
+
+    /**
+     * Queue a drift check of every enabled Node.js app's unit and environment
+     * file, for the config-drift scan.
+     */
+    public function checkAll(?User $actor = null): int
+    {
+        $queued = 0;
+
+        Domain::query()
+            ->whereHas('nodeApp', fn ($query) => $query->where('enabled', true))
+            ->with(['nodeApp', 'account'])
+            ->orderBy('id')
+            ->each(function (Domain $domain) use ($actor, &$queued): void {
+                $app = $domain->nodeApp;
+
+                if ($app !== null && $app->enabled) {
+                    $this->dispatchProvision($domain, $app, $actor, 'nodeapp.check');
+                    $queued++;
+                }
+            });
+
+        return $queued;
     }
 
     /**

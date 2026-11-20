@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"rayxo/agent/internal/drift"
 	"rayxo/agent/internal/rpc"
 	"rayxo/agent/internal/waf"
 )
@@ -14,6 +15,7 @@ import (
 type wafServer interface {
 	Apply(ctx context.Context, s waf.Settings) error
 	Status(ctx context.Context) (waf.Status, error)
+	Check(s waf.Settings) (drift.Report, error)
 }
 
 // wafActions implements the waf.* methods. They are server-wide, like the
@@ -29,10 +31,26 @@ func wafMethods(server wafServer) map[string]rpc.Method {
 
 	return map[string]rpc.Method{
 		"waf.status": {Handler: actions.status},
+		"waf.check":  {Handler: actions.check, LockKey: lock},
 		// Applying rewrites one file and reloads Apache; a couple of minutes is
 		// plenty even on a busy server.
 		"waf.apply": {Handler: actions.apply, LockKey: lock, Timeout: 2 * time.Minute},
 	}
+}
+
+// check implements waf.check: report whether the ModSecurity engine file drifted.
+func (w wafActions) check(_ context.Context, raw json.RawMessage) (any, error) {
+	var settings waf.Settings
+	if err := rpc.DecodeParams(raw, &settings); err != nil {
+		return nil, err
+	}
+
+	report, err := w.server.Check(settings)
+	if err != nil {
+		return nil, wafError(err, "check the ModSecurity config")
+	}
+
+	return report, nil
 }
 
 // status implements waf.status.

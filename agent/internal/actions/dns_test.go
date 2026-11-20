@@ -8,20 +8,29 @@ import (
 	"testing"
 
 	"rayxo/agent/internal/dns"
+	"rayxo/agent/internal/drift"
 	"rayxo/agent/internal/rpc"
 )
 
 // fakeDNSServer records the zones synced and deleted.
 type fakeDNSServer struct {
-	synced  []dns.Zone
-	deleted []string
-	fail    error
+	synced      []dns.Zone
+	checked     []dns.Zone
+	checkReport drift.Report
+	deleted     []string
+	fail        error
 }
 
 func (f *fakeDNSServer) Sync(_ context.Context, zone dns.Zone) error {
 	f.synced = append(f.synced, zone)
 
 	return f.fail
+}
+
+func (f *fakeDNSServer) CheckZone(_ context.Context, zone dns.Zone) (drift.Report, error) {
+	f.checked = append(f.checked, zone)
+
+	return f.checkReport, f.fail
 }
 
 func (f *fakeDNSServer) Delete(_ context.Context, name string) error {

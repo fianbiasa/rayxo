@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Agent\AgentClient;
 use App\Agent\AgentException;
 use App\Http\Controllers\Controller;
+use App\Models\ConfigDrift;
 use App\Services\AuditLogger;
+use App\Services\DriftService;
 use App\Services\RebuildService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -29,7 +31,7 @@ class ServiceController extends Controller
      * The state of every service, the hosting accounts' PHP pools and the
      * watchdog's latest events.
      */
-    public function index(): Response
+    public function index(DriftService $drift): Response
     {
         $report = null;
         $error = null;
@@ -44,7 +46,43 @@ class ServiceController extends Controller
         return Inertia::render('admin/services/index', [
             'report' => $report,
             'error' => $error,
+            'drift' => [
+                'last_scan' => $drift->lastScan()?->toIso8601String(),
+                'items' => $drift->drifted()->map(fn (ConfigDrift $row): array => [
+                    'id' => $row->id,
+                    'kind' => $row->kind,
+                    'path' => $row->path,
+                    'missing' => $row->missing,
+                    'diff' => $row->diff,
+                    'account' => $row->account?->username,
+                ])->all(),
+            ],
         ]);
+    }
+
+    /**
+     * Queue a config-drift check of every agent-managed config. It only reads
+     * and compares; nothing is written until the admin chooses "rewrite".
+     */
+    public function scan(Request $request, DriftService $drift): RedirectResponse
+    {
+        $queued = $drift->scan($request->user());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Checking :count configs for drift. Follow them under Tasks.', ['count' => $queued])]);
+
+        return back();
+    }
+
+    /**
+     * Rewrite one drifted config back to what RAYXO wants.
+     */
+    public function rewrite(Request $request, DriftService $drift, ConfigDrift $configDrift): RedirectResponse
+    {
+        $drift->rewrite($configDrift, $request->user());
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Rewriting :path. Follow it under Tasks.', ['path' => $configDrift->path])]);
+
+        return back();
     }
 
     /**

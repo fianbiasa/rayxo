@@ -80,17 +80,7 @@ func (m *Manager) ApplyLoginDomain(ctx context.Context, domain string) (LoginDom
 		}
 	}
 
-	content, err := render("nginx-login.conf.tmpl", struct {
-		Domain, AcmeDir, Certificate, CertificateKey, PanelSnippet string
-		Listen                                                     []string
-	}{
-		Domain:         domain,
-		AcmeDir:        m.cfg.AcmeDir,
-		Certificate:    m.certificateFile(lineage),
-		CertificateKey: m.certificateKeyFile(lineage),
-		PanelSnippet:   m.cfg.PanelSnippet,
-		Listen:         m.listenAddresses(Site{}),
-	})
+	content, err := m.renderLoginSite(domain)
 	if err != nil {
 		return LoginDomain{}, err
 	}
@@ -114,6 +104,25 @@ func (m *Manager) ApplyLoginDomain(ctx context.Context, domain string) (LoginDom
 	}
 
 	return LoginDomain{Domain: domain, ExpiresAt: certificate.NotAfter.UTC()}, nil
+}
+
+// renderLoginSite renders a reseller login domain's Nginx vhost from the
+// certificate paths it uses, without issuing or writing anything. The apply
+// and the drift check share it.
+func (m *Manager) renderLoginSite(domain string) ([]byte, error) {
+	lineage := loginLineage(domain)
+
+	return render("nginx-login.conf.tmpl", struct {
+		Domain, AcmeDir, Certificate, CertificateKey, PanelSnippet string
+		Listen                                                     []string
+	}{
+		Domain:         domain,
+		AcmeDir:        m.cfg.AcmeDir,
+		Certificate:    m.certificateFile(lineage),
+		CertificateKey: m.certificateKeyFile(lineage),
+		PanelSnippet:   m.cfg.PanelSnippet,
+		Listen:         m.listenAddresses(Site{}),
+	})
 }
 
 // RemoveLoginDomain stops the panel answering at domain and deletes its

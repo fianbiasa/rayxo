@@ -103,4 +103,20 @@ return [
         'dir' => env('RAYXO_BACKUP_DIR', storage_path('app/private/backups')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Releases (one-click update)
+    |--------------------------------------------------------------------------
+    |
+    | The GitHub repository the panel checks for new releases and the default
+    | update channel ("stable" uses the newest full release, "beta" also
+    | considers pre-releases). The admin can switch the channel in the panel.
+    |
+    */
+
+    'release' => [
+        'repo' => env('RAYXO_RELEASE_REPO', 'fianbiasa/rayxo'),
+        'channel' => env('RAYXO_UPDATE_CHANNEL', 'stable'),
+    ],
+
 ];

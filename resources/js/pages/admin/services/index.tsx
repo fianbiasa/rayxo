@@ -25,6 +25,10 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { formatBytes, formatDateTime, formatRelative } from '@/lib/format';
 import { act, rebuild } from '@/routes/admin/services';
+import {
+    rewrite as driftRewrite,
+    scan as driftScan,
+} from '@/routes/admin/services/drift';
 
 type ServiceAction = 'start' | 'stop' | 'restart' | 'reload';
 
@@ -55,9 +59,24 @@ type Report = {
     events: WatchdogEvent[];
 };
 
+type DriftItem = {
+    id: number;
+    kind: string;
+    path: string;
+    missing: boolean;
+    diff: string | null;
+    account: string | null;
+};
+
+type Drift = {
+    last_scan: string | null;
+    items: DriftItem[];
+};
+
 type Props = {
     report: Report | null;
     error: string | null;
+    drift: Drift;
 };
 
 type Pending = { service: ServiceStatus; action: ServiceAction };
@@ -116,14 +135,14 @@ function since(service: ServiceStatus): string {
     return formatRelative(new Date(service.since * 1000).toISOString());
 }
 
-export default function ServicesIndex({ report, error }: Props) {
+export default function ServicesIndex({ report, error, drift }: Props) {
     const [pending, setPending] = useState<Pending | null>(null);
     const [processing, setProcessing] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const [confirmingRebuild, setConfirmingRebuild] = useState(false);
     const [rebuilding, setRebuilding] = useState(false);
 
-    usePoll(10_000, { only: ['report', 'error'] });
+    usePoll(10_000, { only: ['report', 'error', 'drift'] });
 
     const runRebuild = () => {
         setRebuilding(true);
@@ -306,6 +325,8 @@ export default function ServicesIndex({ report, error }: Props) {
                 </>
             )}
 
+            <DriftPanel drift={drift} />
+
             <Dialog
                 open={pending !== null}
                 onOpenChange={(open) => {
@@ -486,5 +507,152 @@ function ServiceRow({
                 )}
             </td>
         </tr>
+    );
+}
+
+function kindLabel(kind: string): string {
+    switch (kind) {
+        case 'nginx-vhost':
+            return 'Vhost Nginx';
+        case 'apache-vhost':
+            return 'Vhost Apache';
+        case 'php-pool':
+            return 'Pool PHP-FPM';
+        case 'php-pool-master':
+            return 'Pool PHP-FPM (master)';
+        case 'php-guard':
+            return 'php-guard';
+        case 'htpasswd':
+            return 'Folder berpassword (htpasswd)';
+        case 'suspended-page':
+            return 'Halaman suspend';
+        case 'cgroup-slice':
+            return 'Batas resource (slice)';
+        case 'cgroup-dropin':
+            return 'Batas resource (sesi)';
+        case 'login-site':
+            return 'Domain login reseller';
+        case 'redis-conf':
+            return 'Config Redis';
+        case 'node-env':
+            return 'Node.js (environment)';
+        case 'node-unit':
+            return 'Node.js (service)';
+        case 'dns-zone':
+            return 'Zone DNS';
+        case 'mail-sieve':
+            return 'Filter email (Sieve)';
+        case 'waf-engine':
+            return 'ModSecurity (WAF)';
+        default:
+            return kind;
+    }
+}
+
+function DriftPanel({ drift }: { drift: Drift }) {
+    const [scanning, setScanning] = useState(false);
+    const [rewriting, setRewriting] = useState<number | null>(null);
+
+    const runScan = () => {
+        setScanning(true);
+        router.post(
+            driftScan().url,
+            {},
+            { preserveScroll: true, onFinish: () => setScanning(false) },
+        );
+    };
+
+    const runRewrite = (id: number) => {
+        setRewriting(id);
+        router.post(
+            driftRewrite(id).url,
+            {},
+            { preserveScroll: true, onFinish: () => setRewriting(null) },
+        );
+    };
+
+    return (
+        <Panel
+            title="Config drift"
+            description="Konfigurasi yang dikelola RAYXO tapi berbeda dari yang seharusnya di server (diedit tangan, rusak, atau belum ter-apply ulang)."
+            action={
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={runScan}
+                    disabled={scanning}
+                >
+                    {scanning ? <Spinner /> : <RefreshCw />}
+                    Scan sekarang
+                </Button>
+            }
+        >
+            <p className="mb-4 text-xs text-muted-foreground">
+                {drift.last_scan
+                    ? `Scan terakhir ${formatRelative(drift.last_scan)}.`
+                    : 'Belum pernah di-scan.'}
+            </p>
+
+            {drift.items.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                    Tidak ada drift terdeteksi.
+                </p>
+            ) : (
+                <ul className="space-y-3">
+                    {drift.items.map((item) => (
+                        <li key={item.id} className="rounded-xl border p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <StatusBadge
+                                            status="failed"
+                                            label={
+                                                item.missing
+                                                    ? 'Hilang'
+                                                    : 'Berbeda'
+                                            }
+                                        />
+                                        <span className="text-sm font-medium">
+                                            {kindLabel(item.kind)}
+                                        </span>
+                                        {item.account && (
+                                            <span className="text-xs text-muted-foreground">
+                                                {item.account}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                                        {item.path}
+                                    </p>
+                                </div>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => runRewrite(item.id)}
+                                    disabled={rewriting === item.id}
+                                >
+                                    {rewriting === item.id ? (
+                                        <Spinner />
+                                    ) : (
+                                        <FileCog />
+                                    )}
+                                    Tulis ulang
+                                </Button>
+                            </div>
+                            {item.diff && (
+                                <details className="mt-2 text-sm">
+                                    <summary className="cursor-pointer text-muted-foreground">
+                                        Lihat perbedaan
+                                    </summary>
+                                    <pre className="mt-2 max-h-72 overflow-auto rounded-xl bg-muted p-3 text-xs leading-relaxed whitespace-pre-wrap">
+                                        {item.diff}
+                                    </pre>
+                                </details>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </Panel>
     );
 }

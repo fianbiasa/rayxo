@@ -426,6 +426,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('server-settings/waf', [ServerSettingController::class, 'updateWaf'])
             ->middleware('throttle:10,1,server-waf')
             ->name('server-settings.waf');
+        Route::post('server-settings/update', [ServerSettingController::class, 'startUpdate'])
+            ->middleware('throttle:10,1,server-update')
+            ->name('server-settings.update');
+        Route::put('server-settings/update-channel', [ServerSettingController::class, 'setUpdateChannel'])
+            ->middleware('throttle:10,1,server-update-channel')
+            ->name('server-settings.update-channel');
         Route::put('server-settings/php-uploads', [ServerSettingController::class, 'updatePhpUploads'])
             ->middleware('throttle:10,1,server-uploads')
             ->name('server-settings.php-uploads');
@@ -444,6 +450,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('services/rebuild', [ServiceController::class, 'rebuild'])
             ->middleware('throttle:6,1')
             ->name('services.rebuild');
+        Route::post('services/drift/scan', [ServiceController::class, 'scan'])
+            ->middleware('throttle:6,1,drift-scan')
+            ->name('services.drift.scan');
+        Route::post('services/drift/{configDrift}/rewrite', [ServiceController::class, 'rewrite'])
+            ->middleware('throttle:30,1,drift-rewrite')
+            ->name('services.drift.rewrite');
         Route::post('services/{unit}/{action}', [ServiceController::class, 'act'])
             ->where('unit', '[a-z0-9][a-z0-9@._-]{0,99}\.service')
             ->whereIn('action', ['start', 'stop', 'restart', 'reload'])

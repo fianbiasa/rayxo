@@ -148,7 +148,7 @@ class MailRulesService
      * Have the agent write the mailbox's Sieve script as it now is; with no
      * automatic reply or filters, the script is removed.
      */
-    public function apply(Mailbox $mailbox, ?User $actor): void
+    public function apply(Mailbox $mailbox, ?User $actor, string $action = 'mail.sieve_apply'): void
     {
         $domain = $mailbox->mailDomain->domain;
 
@@ -159,7 +159,7 @@ class MailRulesService
             $mailbox->spamSetting()->first(),
         );
 
-        $this->tasks->dispatch('mail.sieve_apply', [
+        $this->tasks->dispatch($action, [
             'username' => $domain->account->username,
             'domain' => $domain->name,
             'local_part' => $mailbox->local_part,
@@ -187,6 +187,31 @@ class MailRulesService
             ->orderBy('id')
             ->each(function (Mailbox $mailbox) use ($actor, &$queued): void {
                 $this->apply($mailbox, $actor);
+                $queued++;
+            });
+
+        return $queued;
+    }
+
+    /**
+     * Queue a drift check of every managed mailbox's Sieve script, for the
+     * config-drift scan.
+     *
+     * @return int The number of mailboxes queued.
+     */
+    public function checkAll(?User $actor = null): int
+    {
+        $queued = 0;
+
+        Mailbox::query()
+            ->with('mailDomain.domain.account')
+            ->where(fn ($query) => $query->whereHas('autoreply')->orWhereHas('filters')->orWhereHas('spamSetting'))
+            ->whereHas('mailDomain.domain.account', fn ($query) => $query
+                ->where('role', Role::User)
+                ->whereIn('status', [AccountStatus::Active, AccountStatus::Suspended]))
+            ->orderBy('id')
+            ->each(function (Mailbox $mailbox) use ($actor, &$queued): void {
+                $this->apply($mailbox, $actor, 'mail.check_sieve');
                 $queued++;
             });
 

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"slices"
 
+	"rayxo/agent/internal/drift"
 	"rayxo/agent/internal/mail"
 	"rayxo/agent/internal/rpc"
 	"rayxo/agent/internal/sysuser"
@@ -22,6 +23,7 @@ type mailServer interface {
 	RemoveDomain(ctx context.Context, account *sysuser.User, domain string) error
 	RemoveMailbox(ctx context.Context, account sysuser.User, domain, localPart string) error
 	ApplySieve(ctx context.Context, account sysuser.User, domain, localPart, script string) error
+	CheckSieve(account sysuser.User, domain, localPart, script string) (drift.Report, error)
 	ApplySendLimits(limits mail.SendLimits) error
 	Usage(ctx context.Context) ([]mail.MailboxUsage, error)
 	ApplySNI(ctx context.Context, domains []string, certificates []mail.SNICertificate) error
@@ -124,6 +126,7 @@ func mailMethods(system accountSystem, server mailServer, certificates mailCerti
 		"mail.domain_remove":  {Handler: actions.removeDomain, LockKey: webLockKey[domainParams]},
 		"mail.mailbox_remove": {Handler: actions.removeMailbox, LockKey: webLockKey[mailboxParams]},
 		"mail.sieve_apply":    {Handler: actions.applySieve, LockKey: webLockKey[mailSieveParams]},
+		"mail.check_sieve":    {Handler: actions.checkSieve, LockKey: webLockKey[mailSieveParams]},
 		// Only reads Dovecot's quota bookkeeping.
 		"mail.usage": {Handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
 			if err := rpc.DecodeParams(raw, &struct{}{}); err != nil {
@@ -263,6 +266,27 @@ func (m mailActions) applySieve(ctx context.Context, raw json.RawMessage) (any, 
 	}
 
 	return struct{}{}, nil
+}
+
+// checkSieve implements mail.check_sieve: report whether the mailbox's Sieve
+// script on disk differs from what RAYXO would write, without changing it.
+func (m mailActions) checkSieve(ctx context.Context, raw json.RawMessage) (any, error) {
+	params, err := decodeWebParams[mailSieveParams](raw)
+	if err != nil {
+		return nil, err
+	}
+
+	account, err := m.accounts.requireAccount(ctx, params.Username)
+	if err != nil {
+		return nil, err
+	}
+
+	report, err := m.server.CheckSieve(account, params.Domain, params.LocalPart, params.Script)
+	if err != nil {
+		return nil, rpc.Errorf(rpc.CodeActionFailed, "the filters of %s@%s could not be checked: %v", params.LocalPart, params.Domain, err)
+	}
+
+	return report, nil
 }
 
 // applyDomain implements mail.domain_apply: the folder of the domain's

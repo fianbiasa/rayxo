@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"rayxo/agent/internal/drift"
 	"rayxo/agent/internal/nodeapp"
 	"rayxo/agent/internal/rpc"
 	"rayxo/agent/internal/validate"
@@ -18,6 +19,7 @@ import (
 // implements it.
 type nodeappServer interface {
 	Provision(ctx context.Context, app nodeapp.App) error
+	Check(app nodeapp.App) (drift.Report, error)
 	Deprovision(ctx context.Context, domain string) error
 	Running(ctx context.Context, domain string) (bool, error)
 	Restart(ctx context.Context, domain string) error
@@ -140,6 +142,7 @@ func nodeappMethods(system accountSystem, server nodeappServer) map[string]rpc.M
 
 	return map[string]rpc.Method{
 		"nodeapp.provision":   {Handler: actions.provision, LockKey: webLockKey[nodeappProvisionParams]},
+		"nodeapp.check":       {Handler: actions.check, LockKey: webLockKey[nodeappProvisionParams]},
 		"nodeapp.deprovision": {Handler: actions.deprovision, LockKey: webLockKey[nodeappDomainParams]},
 		"nodeapp.status":      {Handler: actions.status, LockKey: webLockKey[nodeappDomainParams]},
 		"nodeapp.restart":     {Handler: actions.restart, LockKey: webLockKey[nodeappDomainParams]},
@@ -176,6 +179,36 @@ func (n nodeappActions) provision(ctx context.Context, raw json.RawMessage) (any
 	}
 
 	return struct{}{}, nil
+}
+
+// check implements nodeapp.check: report whether the domain's Node.js app unit
+// and environment file drifted, without writing.
+func (n nodeappActions) check(ctx context.Context, raw json.RawMessage) (any, error) {
+	params, err := decodeWebParams[nodeappProvisionParams](raw)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := n.accounts.requireAccount(ctx, params.Username)
+	if err != nil {
+		return nil, err
+	}
+
+	report, err := n.server.Check(nodeapp.App{
+		User:    user.Name,
+		UID:     user.UID,
+		GID:     user.GID,
+		Domain:  params.Domain,
+		WorkDir: filepath.Join(user.Home, "domains", params.Domain, "public_html"),
+		Entry:   params.Entry,
+		Env:     params.Env,
+		Port:    params.Port,
+	})
+	if err != nil {
+		return nil, nodeappError(err, "check the Node.js app of "+params.Domain)
+	}
+
+	return report, nil
 }
 
 // deprovision implements nodeapp.deprovision. A missing service or account

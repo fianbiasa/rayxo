@@ -19,6 +19,7 @@ use App\Services\DomainService;
 use App\Services\MailSendLimitService;
 use App\Services\ServerSettingsService;
 use App\Services\TelegramBot;
+use App\Services\UpdateService;
 use App\Support\PhpSettings;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
@@ -44,6 +45,7 @@ class ServerSettingController extends Controller
         private DatabaseToolsService $databaseTools,
         private AuditLogger $audit,
         private TelegramBot $telegram,
+        private UpdateService $updates,
     ) {}
 
     public function index(): Response
@@ -77,6 +79,7 @@ class ServerSettingController extends Controller
             'ioncube' => $this->settings->ionCube(),
             'clamav' => $this->settings->clamav(),
             'waf' => $this->settings->waf(),
+            'update' => $this->updates->info(is_array($server) && is_string($server['version'] ?? null) ? $server['version'] : ''),
             'telegram_bot' => $this->telegram->username(),
             'mail_limits' => [
                 ...$this->settings->mailSendLimits(),
@@ -406,6 +409,44 @@ class ServerSettingController extends Controller
         };
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
+
+        return back();
+    }
+
+    /**
+     * Start updating the panel to the newest release on the chosen channel.
+     */
+    public function startUpdate(Request $request): RedirectResponse
+    {
+        $installed = '';
+
+        try {
+            $server = $this->settings->serverState();
+            $installed = is_string($server['version'] ?? null) ? $server['version'] : '';
+        } catch (AgentException $exception) {
+            throw ValidationException::withMessages(['update' => __('The agent did not answer. Check that rayxod is running: systemctl status rayxod')]);
+        }
+
+        $result = $this->updates->start($installed, $request->user());
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Updating to v:version has started; follow it on this page.', ['version' => $result['version']]),
+        ]);
+
+        return back();
+    }
+
+    /**
+     * Choose the update channel (stable or beta).
+     */
+    public function setUpdateChannel(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'channel' => ['required', Rule::in(UpdateService::CHANNELS)],
+        ]);
+
+        $this->updates->setChannel((string) $validated['channel'], $request->user());
 
         return back();
     }

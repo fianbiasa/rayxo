@@ -148,6 +148,30 @@ class BrandingService
     }
 
     /**
+     * Queue a drift check of every reseller login-domain vhost, for the
+     * config-drift scan.
+     */
+    public function checkAll(?User $actor = null): int
+    {
+        $queued = 0;
+
+        ResellerSetting::query()
+            ->whereNotNull('login_domain')
+            ->with('user')
+            ->orderBy('id')
+            ->each(function (ResellerSetting $settings) use ($actor, &$queued): void {
+                $reseller = $settings->user;
+
+                if ($reseller !== null && $settings->login_domain !== null) {
+                    $this->tasks->dispatch('panel.check_login_domain', ['domain' => $settings->login_domain], $reseller, $actor);
+                    $queued++;
+                }
+            });
+
+        return $queued;
+    }
+
+    /**
      * The branding the request is shown: a reseller's own, or for a
      * hosting account its reseller's; null for the panel's own.
      *

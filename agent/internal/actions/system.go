@@ -9,7 +9,9 @@ import (
 	"rayxo/agent/internal/panelport"
 	"rayxo/agent/internal/reconfigure"
 	"rayxo/agent/internal/rpc"
+	"rayxo/agent/internal/updater"
 	"rayxo/agent/internal/validate"
+	"rayxo/agent/internal/version"
 	"rayxo/agent/internal/webserver"
 )
 
@@ -27,6 +29,13 @@ type hostnameCertificates interface {
 type hostnameChanger interface {
 	Start(ctx context.Context, request reconfigure.Request) error
 	Status(ctx context.Context) (*reconfigure.State, error)
+}
+
+// panelUpdater updates the panel by running a newer release's setup.sh.
+// updater.Manager implements it.
+type panelUpdater interface {
+	Start(ctx context.Context, target updater.Target) error
+	Status(ctx context.Context) (*updater.State, error)
 }
 
 // panelPorts moves the panel to another port. panelport.Manager
@@ -50,11 +59,18 @@ type serverClock interface {
 // never changed from the panel.
 type serverSettings struct {
 	Hostname    string                         `json:"hostname"`
+	Version     string                         `json:"version"`
 	Timezone    string                         `json:"timezone"`
 	Certificate *webserver.HostnameCertificate `json:"certificate"`
 	Reconfigure *reconfigure.State             `json:"reconfigure"`
+	Update      *updater.State                 `json:"update"`
 	PanelPort   int                            `json:"panel_port"`
 	PortTrial   *panelport.Trial               `json:"port_trial"`
+}
+
+type updateParams struct {
+	Version  string `json:"version"`
+	SetupURL string `json:"setup_url"`
 }
 
 type portParams struct {
@@ -70,14 +86,14 @@ type timezoneParams struct {
 }
 
 // systemMethods returns the methods behind the panel's server settings.
-func systemMethods(certificates hostnameCertificates, serverTime serverClock, changer hostnameChanger, ports panelPorts) map[string]rpc.Method {
+func systemMethods(certificates hostnameCertificates, serverTime serverClock, changer hostnameChanger, ports panelPorts, up panelUpdater) map[string]rpc.Method {
 	return map[string]rpc.Method{
 		"system.settings": {Handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
 			if err := rpc.DecodeParams(raw, &struct{}{}); err != nil {
 				return nil, err
 			}
 
-			settings := serverSettings{Timezone: serverTime.Timezone()}
+			settings := serverSettings{Timezone: serverTime.Timezone(), Version: version.Version}
 			settings.Hostname, _ = certificates.ServerHostname()
 
 			if status, err := certificates.HostnameCertificateStatus(); err == nil {
@@ -90,6 +106,13 @@ func systemMethods(certificates hostnameCertificates, serverTime serverClock, ch
 			}
 
 			settings.Reconfigure = state
+
+			update, err := up.Status(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			settings.Update = update
 			settings.PanelPort = ports.Current()
 
 			if settings.PortTrial, err = ports.Pending(); err != nil {
@@ -97,6 +120,25 @@ func systemMethods(certificates hostnameCertificates, serverTime serverClock, ch
 			}
 
 			return settings, nil
+		}},
+		"system.update": {Handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
+			var params updateParams
+			if err := rpc.DecodeParams(raw, &params); err != nil {
+				return nil, err
+			}
+
+			if err := up.Start(ctx, updater.Target{Version: params.Version, SetupURL: params.SetupURL}); err != nil {
+				switch {
+				case errors.Is(err, updater.ErrRunning):
+					return nil, &rpc.Error{Code: rpc.CodeActionFailed, Message: "an update is already running", Data: map[string]string{"reason": "busy"}}
+				case errors.Is(err, updater.ErrInvalidURL):
+					return nil, rpc.Errorf(rpc.CodeInvalidParams, "invalid params: the setup.sh URL is not a RAYXO release URL")
+				default:
+					return nil, err
+				}
+			}
+
+			return updateParams{Version: params.Version, SetupURL: params.SetupURL}, nil
 		}},
 		"panel.port_trial": {Handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
 			var params portParams

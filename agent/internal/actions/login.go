@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"rayxo/agent/internal/drift"
 	"rayxo/agent/internal/rpc"
 	"rayxo/agent/internal/validate"
 	"rayxo/agent/internal/webserver"
@@ -15,6 +16,7 @@ import (
 // *webserver.Manager implements it.
 type loginDomains interface {
 	ApplyLoginDomain(ctx context.Context, domain string) (webserver.LoginDomain, error)
+	CheckLoginDomain(domain string) (drift.Report, error)
 	RemoveLoginDomain(ctx context.Context, domain string) error
 }
 
@@ -43,8 +45,25 @@ func loginMethods(domains loginDomains) map[string]rpc.Method {
 
 	return map[string]rpc.Method{
 		"panel.add_login_domain":    {Handler: l.add, LockKey: lock},
+		"panel.check_login_domain":  {Handler: l.check, LockKey: lock},
 		"panel.remove_login_domain": {Handler: l.remove, LockKey: lock},
 	}
+}
+
+// check implements panel.check_login_domain: report whether the login site's
+// Nginx vhost drifted, without writing.
+func (l loginActions) check(_ context.Context, raw json.RawMessage) (any, error) {
+	params, err := decodeLoginDomainParams(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	report, err := l.domains.CheckLoginDomain(params.Domain)
+	if err != nil {
+		return nil, rpc.Errorf(rpc.CodeActionFailed, "%v", err)
+	}
+
+	return report, nil
 }
 
 func decodeLoginDomainParams(raw json.RawMessage) (loginDomainParams, error) {

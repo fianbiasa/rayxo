@@ -109,13 +109,37 @@ class RedisService
         }
     }
 
-    private function dispatchProvision(RedisInstance $instance, User $account, ?User $actor): void
+    private function dispatchProvision(RedisInstance $instance, User $account, ?User $actor, string $action = 'redis.provision'): void
     {
-        $this->tasks->dispatch('redis.provision', [
+        $this->tasks->dispatch($action, [
             'username' => $account->username,
             'password' => $instance->password,
             'max_memory_mb' => $instance->max_memory_mb,
         ], $account, $actor);
+    }
+
+    /**
+     * Queue a drift check of every enabled Redis instance's config, for the
+     * config-drift scan.
+     */
+    public function checkAll(?User $actor = null): int
+    {
+        $queued = 0;
+
+        RedisInstance::query()
+            ->where('enabled', true)
+            ->with('account')
+            ->orderBy('id')
+            ->each(function (RedisInstance $instance) use ($actor, &$queued): void {
+                $account = $instance->account;
+
+                if (in_array($account->status, [AccountStatus::Active, AccountStatus::Suspended], true)) {
+                    $this->dispatchProvision($instance, $account, $actor, 'redis.check');
+                    $queued++;
+                }
+            });
+
+        return $queued;
     }
 
     /**
