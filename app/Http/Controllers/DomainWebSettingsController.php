@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\DomainType;
 use App\Enums\PointerMode;
+use App\Http\Requests\NodeAppRequest;
 use App\Http\Requests\SaveErrorPageRequest;
 use App\Http\Requests\StoreProtectedDirectoryRequest;
 use App\Http\Requests\StoreProtectedLoginRequest;
@@ -91,6 +92,7 @@ class DomainWebSettingsController extends Controller
                 'enabled' => $domain->cgi_enabled,
                 'allowed' => AccountLimits::for($domain->account)->allowsCgi(),
             ],
+            'node_app' => $this->nodeAppProps($domain),
             'options' => [
                 'error_page_statuses' => WebSettings::ERROR_PAGE_STATUSES,
                 'static_extensions' => WebSettings::STATIC_EXTENSIONS,
@@ -99,8 +101,38 @@ class DomainWebSettingsController extends Controller
                 'max_protected_logins' => WebSettings::MAX_PROTECTED_USERS,
                 'max_mime_types' => WebSettings::MAX_MIME_TYPES,
                 'max_php_extensions' => WebSettings::MAX_PHP_EXTENSIONS,
+                'max_node_env' => NodeAppRequest::MAX_ENV,
             ],
         ]);
+    }
+
+    /**
+     * The domain's Node.js app for the page: whether it is on, its status, the
+     * entry script and the environment (as name/value pairs the UI edits).
+     *
+     * @return array{enabled: bool, status: string|null, entry: string, port: int|null, env: list<array{name: string, value: string}>}
+     */
+    private function nodeAppProps(Domain $domain): array
+    {
+        $app = $domain->nodeApp;
+
+        if ($app === null) {
+            return ['enabled' => false, 'status' => null, 'entry' => '', 'port' => null, 'env' => []];
+        }
+
+        $env = [];
+
+        foreach ($app->env ?? [] as $name => $value) {
+            $env[] = ['name' => $name, 'value' => $value];
+        }
+
+        return [
+            'enabled' => $app->enabled,
+            'status' => $app->status->value,
+            'entry' => $app->entry,
+            'port' => $app->port,
+            'env' => $env,
+        ];
     }
 
     /**

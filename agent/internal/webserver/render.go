@@ -90,6 +90,10 @@ type siteData struct {
 	CGI bool
 	// Suspended answers every request with the unavailable page.
 	Suspended bool
+	// NodeApp reverse-proxies the domain to the account's Node.js app instead
+	// of to Apache; NodeProxyTo is that app's localhost address.
+	NodeApp     bool
+	NodeProxyTo string
 }
 
 // staticData is what the template of the static files location sees.
@@ -235,9 +239,21 @@ func (m *Manager) siteData(site Site) siteData {
 		PHPPattern:        phpPattern(site.PHPExtensions),
 		CGI:               site.CGI,
 		Suspended:         site.Suspended,
+		NodeApp:           site.NodeApp,
+		NodeProxyTo:       nodeProxyTo(site),
 		CustomNginx:       m.cfg.CustomNginx,
 		CustomApache:      m.cfg.CustomApache,
 	}
+}
+
+// nodeProxyTo is the localhost address of the domain's Node.js app, or "" when
+// the domain is not in Node app mode.
+func nodeProxyTo(site Site) string {
+	if !site.NodeApp {
+		return ""
+	}
+
+	return fmt.Sprintf("http://127.0.0.1:%d", site.NodePort)
 }
 
 // sitePoolData returns the pool of site: named after its domain, with a

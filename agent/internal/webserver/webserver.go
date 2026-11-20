@@ -348,6 +348,12 @@ type Site struct {
 	// account: the website reached a limit of its own. An alias carries
 	// that of the website it shows.
 	Suspended bool
+	// NodeApp serves the domain by reverse-proxying to the account's Node.js
+	// app on NodePort (127.0.0.1) instead of to Apache/PHP. The app runs as a
+	// systemd service the nodeapp package manages; such a domain gets no PHP
+	// pool and no Apache vhost.
+	NodeApp  bool
+	NodePort int
 }
 
 // kind returns the Kind of the site, KindDomain when it is not set.
@@ -546,7 +552,7 @@ func (m *Manager) ApplyDomain(ctx context.Context, site Site) (string, error) {
 		return "", err
 	}
 
-	if site.Kind != KindForward && !site.NoPHP {
+	if site.Kind != KindForward && !site.NoPHP && !site.NodeApp {
 		if err := m.applyPool(ctx, site); err != nil {
 			return "", err
 		}
@@ -978,8 +984,9 @@ func (m *Manager) changeSuspension(ctx context.Context, user string, page []byte
 }
 
 // applyVhosts writes the Nginx and Apache vhosts of site, then tests and
-// reloads both servers. A forward is answered by Nginx alone, so it has no
-// Apache vhost; one left from when it was an alias is deleted.
+// reloads both servers. A forward is answered by Nginx alone, and a Node.js app
+// is reverse-proxied by Nginx straight to the app, so neither has an Apache
+// vhost; one left from when the domain served PHP is deleted.
 func (m *Manager) applyVhosts(ctx context.Context, site Site) error {
 	data := m.siteData(site)
 
@@ -990,7 +997,7 @@ func (m *Manager) applyVhosts(ctx context.Context, site Site) error {
 
 	var apache []byte
 
-	if site.kind() != KindForward {
+	if site.kind() != KindForward && !site.NodeApp {
 		apache, err = render("apache-vhost.conf.tmpl", data)
 		if err != nil {
 			return err

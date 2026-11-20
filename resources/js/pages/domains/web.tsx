@@ -38,6 +38,12 @@ import {
 import { formatDateTime } from '@/lib/format';
 import { update as updateCgi } from '@/routes/domains/cgi';
 import { update as updateLimits } from '@/routes/domains/limits';
+import {
+    destroy as disableNodeApp,
+    restart as restartNodeApp,
+    store as enableNodeApp,
+    update as updateNodeApp,
+} from '@/routes/domains/node-app';
 import { update as updateHotlink } from '@/routes/domains/hotlink';
 import { update as updateMimeTypes } from '@/routes/domains/mime-types';
 import { update as updatePhpExtensions } from '@/routes/domains/php-extensions';
@@ -69,6 +75,16 @@ type Hotlink = {
 
 type MimeType = { extension: string; type: string };
 
+type EnvVar = { name: string; value: string };
+
+type NodeApp = {
+    enabled: boolean;
+    status: string | null;
+    entry: string;
+    port: number | null;
+    env: EnvVar[];
+};
+
 type Props = {
     domain: {
         id: number;
@@ -86,6 +102,7 @@ type Props = {
     mime_types: MimeType[];
     php_extensions: string[];
     cgi: { enabled: boolean; allowed: boolean };
+    node_app: NodeApp;
     limits: {
         bandwidth_limit_mb: number | null;
         disk_limit_mb: number | null;
@@ -102,6 +119,7 @@ type Props = {
         max_protected_logins: number;
         max_mime_types: number;
         max_php_extensions: number;
+        max_node_env: number;
     };
 };
 
@@ -156,6 +174,7 @@ export default function DomainWebSettings({
     mime_types,
     php_extensions,
     cgi,
+    node_app,
     limits,
     options,
 }: Props) {
@@ -271,6 +290,13 @@ export default function DomainWebSettings({
                 />
                 <CgiPanel domain={domain} cgi={cgi} />
             </div>
+
+            <NodeAppPanel
+                key={`${node_app.enabled}-${node_app.entry}-${node_app.env.length}`}
+                domain={domain}
+                nodeApp={node_app}
+                maxEnv={options.max_node_env}
+            />
         </>
     );
 }
@@ -1394,6 +1420,246 @@ function CgiPanel({
                     </>
                 )}
             </Form>
+        </Panel>
+    );
+}
+
+function NodeAppPanel({
+    domain,
+    nodeApp,
+    maxEnv,
+}: {
+    domain: Props['domain'];
+    nodeApp: NodeApp;
+    maxEnv: number;
+}) {
+    const [entry, setEntry] = useState(nodeApp.entry);
+    const [rows, setRows] = useState<EnvVar[]>(nodeApp.env);
+
+    const setRow = (index: number, row: Partial<EnvVar>) =>
+        setRows((current) =>
+            current.map((value, i) =>
+                i === index ? { ...value, ...row } : value,
+            ),
+        );
+
+    const statusLabel = !nodeApp.enabled
+        ? 'Mati'
+        : nodeApp.status === 'active'
+          ? 'Menyala'
+          : nodeApp.status === 'failed'
+            ? 'Gagal dijalankan'
+            : 'Sedang dijalankan';
+
+    const statusTone = !nodeApp.enabled
+        ? 'neutral'
+        : nodeApp.status === 'active'
+          ? 'active'
+          : nodeApp.status === 'failed'
+            ? 'failed'
+            : 'pending';
+
+    return (
+        <Panel
+            title="Aplikasi Node.js"
+            description={`Jalankan aplikasi Node.js (Nuxt, Next, Express, dan lainnya) untuk ${domain.display_name}. Build aplikasinya sendiri lewat SSH, lalu RAYXO menjalankan hasil build-nya sebagai service dan mengarahkan domain ke app itu. Selama Node.js menyala, domain ini tidak lagi memakai PHP/Apache.`}
+        >
+            <div className="grid gap-5">
+                <div className="flex flex-wrap items-center gap-3">
+                    <StatusBadge status={statusTone} label={statusLabel} />
+                    {nodeApp.enabled && nodeApp.port !== null && (
+                        <span className="text-xs text-muted-foreground">
+                            Port lokal {nodeApp.port}
+                        </span>
+                    )}
+                    {nodeApp.enabled && (
+                        <div className="ml-auto flex flex-wrap gap-2">
+                            <Form
+                                {...restartNodeApp.form(domain.id)}
+                                options={{ preserveScroll: true }}
+                            >
+                                {({ processing }) => (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={processing}
+                                    >
+                                        {processing && <Spinner />}
+                                        Restart
+                                    </Button>
+                                )}
+                            </Form>
+                            <Form
+                                {...disableNodeApp.form(domain.id)}
+                                options={{ preserveScroll: true }}
+                            >
+                                {({ processing }) => (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={processing}
+                                    >
+                                        {processing && <Spinner />}
+                                        Matikan
+                                    </Button>
+                                )}
+                            </Form>
+                        </div>
+                    )}
+                </div>
+
+                <Form
+                    {...(nodeApp.enabled
+                        ? updateNodeApp.form(domain.id)
+                        : enableNodeApp.form(domain.id))}
+                    options={{ preserveScroll: true }}
+                    transform={() => ({ entry, env: rows })}
+                    className="grid gap-4"
+                >
+                    {({ processing, errors }) => {
+                        const fieldErrors = errors as Record<string, string>;
+
+                        return (
+                            <>
+                                <div className="grid gap-1.5">
+                                    <Label htmlFor="node-entry">
+                                        File entry
+                                    </Label>
+                                    <Input
+                                        id="node-entry"
+                                        value={entry}
+                                        onChange={(event) =>
+                                            setEntry(event.target.value)
+                                        }
+                                        placeholder=".output/server/index.mjs"
+                                        className="font-mono"
+                                        aria-invalid={
+                                            errors.entry ? true : undefined
+                                        }
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Path ke file yang dijalankan node,
+                                        relatif terhadap {domain.document_root}.
+                                    </p>
+                                    <InputError message={errors.entry} />
+                                </div>
+
+                                <div className="grid gap-2">
+                                    <Label>Environment</Label>
+                                    {rows.length === 0 && (
+                                        <p className="text-sm text-muted-foreground">
+                                            Belum ada. RAYXO selalu mengisi
+                                            PORT, HOST dan NODE_ENV sendiri.
+                                        </p>
+                                    )}
+                                    {rows.map((row, index) => {
+                                        const nameError =
+                                            fieldErrors[`env.${index}.name`];
+                                        const valueError =
+                                            fieldErrors[`env.${index}.value`];
+
+                                        return (
+                                            <div
+                                                key={index}
+                                                className="grid gap-1"
+                                            >
+                                                <div className="grid grid-cols-[12rem_1fr_auto] gap-2">
+                                                    <Input
+                                                        value={row.name}
+                                                        onChange={(event) =>
+                                                            setRow(index, {
+                                                                name: event
+                                                                    .target
+                                                                    .value,
+                                                            })
+                                                        }
+                                                        placeholder="DATABASE_URL"
+                                                        aria-label="Nama variabel"
+                                                        className="font-mono"
+                                                        aria-invalid={
+                                                            nameError
+                                                                ? true
+                                                                : undefined
+                                                        }
+                                                    />
+                                                    <Input
+                                                        value={row.value}
+                                                        onChange={(event) =>
+                                                            setRow(index, {
+                                                                value: event
+                                                                    .target
+                                                                    .value,
+                                                            })
+                                                        }
+                                                        placeholder="nilai"
+                                                        aria-label="Nilai variabel"
+                                                        className="font-mono"
+                                                        aria-invalid={
+                                                            valueError
+                                                                ? true
+                                                                : undefined
+                                                        }
+                                                    />
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        aria-label="Hapus baris"
+                                                        onClick={() =>
+                                                            setRows((current) =>
+                                                                current.filter(
+                                                                    (_, i) =>
+                                                                        i !==
+                                                                        index,
+                                                                ),
+                                                            )
+                                                        }
+                                                    >
+                                                        <Trash2 />
+                                                    </Button>
+                                                </div>
+                                                <InputError
+                                                    message={
+                                                        nameError ?? valueError
+                                                    }
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                                    <InputError message={errors.env} />
+                                    <div>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            disabled={rows.length >= maxEnv}
+                                            onClick={() =>
+                                                setRows((current) => [
+                                                    ...current,
+                                                    { name: '', value: '' },
+                                                ])
+                                            }
+                                        >
+                                            <Plus /> Tambah variabel
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                <InputError message={errors.node_app} />
+
+                                <div>
+                                    <Button disabled={processing}>
+                                        {processing && <Spinner />}
+                                        {nodeApp.enabled
+                                            ? 'Simpan & terapkan'
+                                            : 'Nyalakan Node.js'}
+                                    </Button>
+                                </div>
+                            </>
+                        );
+                    }}
+                </Form>
+            </div>
         </Panel>
     );
 }

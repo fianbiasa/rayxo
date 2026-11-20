@@ -1143,6 +1143,72 @@ add_php_repository() {
     fi
 }
 
+# deb.nodesource.com, signed by "NSolid <nsolid-gpg@nodesource.com>"
+# (6F71 F525 2828 41EE DAF8 51B4 2F59 B5F9 9B1B E0B4), a key that does not
+# expire. Node 22 LTS for the accounts' Node.js apps; written again on every
+# run so upgrading RAYXO renews the key.
+write_node_source() {
+    install_apt_key /etc/apt/keyrings/nodesource.asc 6F71F525282841EEDAF851B42F59B5F99B1BE0B4 <<'KEY'
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mQENBFdDN1ABCADaNd/I3j3tn40deQNgz7hB2NvT+syXe6k4ZmdiEcOfBvFrkS8B
+hNS67t93etHsxEy7E0qwsZH32bKazMqe9zDwoa3aVImryjh6SHC9lMtW27JPHFeM
+Srkt9YmH1WMwWcRO6eSY9B3PpazquhnvbammLuUojXRIxkDroy6Fw4UKmUNSRr32
+9Ej87jRoR1B2/57Kfp2Y4+vFGGzSvh3AFQpBHq51qsNHALU6+8PjLfIt+5TPvaWR
+TB+kAZnQZkaIQM2nr1n3oj6ak2RATY/+kjLizgFWzgEfbCrbsyq68UoY5FPBnu4Z
+E3iDZpaIqwKr0seUC7iA1xM5eHi5kty1oB7HABEBAAG0Ik5Tb2xpZCA8bnNvbGlk
+LWdwZ0Bub2Rlc291cmNlLmNvbT6JAU4EEwEKADgCGwMCHgECF4AWIQRvcfUlKChB
+7tr4UbQvWbX5mxvgtAUCaWfGnwULCQgHAgYVCgkICwIEFgIDAQAKCRAvWbX5mxvg
+tL0CB/0TTur63uXTPbq+JBQET6jnEVaDrNmpHI/z2RMuj163gmy9CtCwG060c+TI
+qzmzlPacbTkGc5C50teX2mhs+5JIthfhMibR6Dgy0zeSVuvt9WJ3TNWBpoW5Ezka
+17SA3Xv9UEJS2eyRd7ALf7TGGAj8DG+xRABXl6bJIXh1s7Hki7kwgVrpNxm/EqyX
+OrzExm0g2UjgdkbnZrnTyZMB6X8f8fZPo0QcByPvLee2DtkKeE+SZlFXyvnCzcw0
+94K45vlWkEdRzmiiWAG7guzZyZYGcCO5EoJ3LUP90qhrmQUfsbtczeoEW17EW1jM
+RohLo8BqVyYc1CAFlULIDNeS3aipuQENBFdDN1ABCACq02gutmss6jiD2u50vdAR
+x3JOGd92trWRf7qH9/MTToslhoU/LiXhaE0x5+UkKuRbcruCtytn226brvwD0BdO
+QGpY81ZAxjTFuKUpIDmrHcrI/N9XLrLKx19kWEttsIPNJOgvx8JoeReOX2hLjcbF
+fmz8e6D1K7eZ+hjMfOLxD94tfhQwYtKbfwf0JwxQV5ItQRryd+X+TcA3nyvFWiJ8
+Vz92Tf1iG7Z+XasaaZFf2JDuxoiZaSZY7va395ClCEMykFsRbGwgDyB6Fr+6x/UU
+sYA4rYV7RumIOUdWngWyWjzVy/cKSWASW4jI5ABWs+AfeRTqmZt6+6B7oIghrB19
+ABEBAAGJAR8EGAECAAkFAldDN1ACGwwACgkQL1m1+Zsb4LRPzgf9FTfPA0d2N37q
+su5av3bYZJ+w6pvWF3aK2Zdy9ednhCBfPNmhvBRN6mXWixo0DuKEoQMjVpkX0hrq
+B9FxEVwCPZ9K/JuJgzMROq7T+7R3rcv+TPMdwk8rjIMeRiw2hFLwbrJ0w/v7/3wT
+MESv3GfXbuT0huEedK7bLfqGMgtmqMeCNkoI7Rf3GO2xArGQ6Zc2rTd4L9+D5HHS
+IPEixwFZS+Debc7pg3os0bKXEsqMtitvocClOAuPnXpCy04PK450UTr6ZVdirWhJ
+Oq8SrSERQwqEJ4PMHybiDKwzSr6mcBURre3G71uTAp7h/DISLTpfVMadcB6eoLWr
+/4fBqejAWg==
+=wh5k
+-----END PGP PUBLIC KEY BLOCK-----
+KEY
+    cat >/etc/apt/sources.list.d/nodesource.sources <<'SOURCES'
+# Written by RAYXO setup.sh on every run: Node.js 22 LTS for accounts' apps.
+Types: deb
+URIs: https://deb.nodesource.com/node_22.x
+Suites: nodistro
+Components: main
+Signed-By: /etc/apt/keyrings/nodesource.asc
+SOURCES
+}
+
+# Set up the Node.js repository. Succeeds when it added one, so apt needs an
+# update; fails (returns 1) when the repository is already there or cannot be
+# reached, so the install goes on without it (nodejs is best-effort).
+add_node_repository() {
+    if [[ -f /etc/apt/sources.list.d/nodesource.sources ]]; then
+        write_node_source
+        return 1
+    fi
+
+    if curl -fsS --max-time 20 -o /dev/null https://deb.nodesource.com/node_22.x/dists/nodistro/InRelease 2>>"$INSTALL_LOG"; then
+        info "Menambahkan repo Node.js deb.nodesource.com (Node 22 LTS)"
+        write_node_source
+        return 0
+    fi
+
+    warn "repo Node.js deb.nodesource.com tidak bisa dihubungi; Node.js dilewati (aktifkan lagi dengan menjalankan setup.sh)"
+    return 1
+}
+
 install_packages() {
     step "Memasang paket sistem (beberapa menit; detail di $INSTALL_LOG)"
 
@@ -1152,7 +1218,16 @@ install_packages() {
     apt_update "${apt[@]}"
     quietly "${apt[@]}" install ca-certificates curl gnupg openssl tar
 
+    # Add the extra repositories (PHP, Node.js), then update once if either was
+    # added. Node.js is best-effort: a server that cannot reach it still installs.
+    local want_update=false
     if add_php_repository; then
+        want_update=true
+    fi
+    if add_node_repository; then
+        want_update=true
+    fi
+    if [[ "$want_update" == true ]]; then
         apt_update "${apt[@]}"
     fi
 
@@ -1226,6 +1301,13 @@ DEBCONF
     # ClamAV it runs by default (apps connect over localhost); configure_postgres
     # keeps it on 127.0.0.1 only and uses SCRAM for the account roles.
     quietly "${apt[@]}" install postgresql postgresql-contrib
+
+    # Node.js 22 LTS for accounts that run a Node.js app (the agent's nodeapp.*
+    # services run the account's built app). Best-effort: only when its
+    # repository is present, so a server that could not reach it still installs.
+    if [[ -f /etc/apt/sources.list.d/nodesource.sources ]]; then
+        quietly "${apt[@]}" install nodejs
+    fi
 
     # GoAccess makes the visitor reports of websites (the agent's stats.report).
     quietly "${apt[@]}" install --no-install-recommends goaccess
@@ -3166,6 +3248,15 @@ CONF
         printf '    server 127.0.0.1:8444;\n'
         printf '    keepalive 32;\n'
         printf '    keepalive_timeout 4s;\n'
+        printf '}\n'
+
+        # WebSocket upgrade for accounts' Node.js apps. The per-domain vhost
+        # sets Connection to $connection_upgrade, which is "upgrade" only when
+        # the client asked to upgrade and "" otherwise, so a plain HTTP request
+        # is not sent a dangling "Connection: upgrade" header.
+        printf '\nmap $http_upgrade $connection_upgrade {\n'
+        printf '    default upgrade;\n'
+        printf "    ''      close;\n"
         printf '}\n'
 
         # Room for long domain names (253 characters plus "www.") and many

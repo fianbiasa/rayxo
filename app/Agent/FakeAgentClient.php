@@ -82,6 +82,8 @@ final class FakeAgentClient implements AgentClient
                 'simulated' => true,
             ],
             'clamav.scan' => ['clean' => true, 'infected' => [], 'simulated' => true],
+            'nodeapp.provision', 'nodeapp.deprovision', 'nodeapp.restart' => ['simulated' => true],
+            'nodeapp.status' => ['running' => true, 'simulated' => true],
             'fs.list' => $this->fileListing((string) ($params['username'] ?? ''), (string) ($params['path'] ?? '')),
             'fs.read' => ['content' => "<?php\n\necho 'Hello from RAYXO';\n", 'size' => 33, 'version' => 'simulated-1'],
             'fs.write' => ['size' => strlen((string) ($params['content'] ?? '')), 'version' => 'simulated-'.now()->getTimestamp()],

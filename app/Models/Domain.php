@@ -255,6 +255,16 @@ class Domain extends Model
     }
 
     /**
+     * The Node.js app this domain runs instead of PHP, if any.
+     *
+     * @return HasOne<NodeApp, $this>
+     */
+    public function nodeApp(): HasOne
+    {
+        return $this->hasOne(NodeApp::class);
+    }
+
+    /**
      * The website's URL redirects.
      *
      * @return HasMany<UrlRedirect, $this>

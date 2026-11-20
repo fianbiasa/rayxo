@@ -66,6 +66,8 @@ server {
 {{define "content"}}
 {{- if .ForwardTo}}
 {{- template "forward" .}}
+{{- else if .NodeApp}}
+{{- template "node" .}}
 {{- else}}
 {{- template "site" .}}
 {{- end}}
@@ -77,6 +79,29 @@ server {
     location / {
         return 301 $scheme://{{.ForwardTo}}$request_uri;
     }
+{{- end}}
+{{- /* A domain whose account runs a Node.js app: Nginx reverse-proxies every
+       request to that app on localhost instead of to Apache/PHP. */ -}}
+{{define "node"}}
+{{- template "suspended" .}}
+{{- if .Suspended}}
+
+    # The website reached a limit its account set for it.
+    default_type text/html;
+    return 503 '{{template "unavailable-page"}}';
+{{- else}}
+
+    # Hidden files and folders are never served (an app's .env with its
+    # passwords, a .git checkout), whatever the app would otherwise answer.
+    # Only /.well-known/ stays public, for app links, security.txt and the like.
+    location ~ /\.(?!well-known(?:/|$)) {
+        deny all;
+    }
+
+    location / {
+{{- template "node-proxy" .}}
+    }
+{{- end}}
 {{- end}}
 {{- /* Exists only while the account is suspended (the glob makes a missing file fine). */ -}}
 {{define "suspended"}}
@@ -212,4 +237,18 @@ server {
         proxy_buffer_size 32k;
         proxy_buffers 16 16k;
         proxy_busy_buffers_size 64k;
+{{- end}}
+{{- /* The account's Node.js app on localhost, with the headers a Node server
+       expects and a WebSocket upgrade path. $connection_upgrade comes from the
+       http-level map the installer writes. */ -}}
+{{define "node-proxy"}}
+        proxy_pass {{.NodeProxyTo}};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
 {{- end}}

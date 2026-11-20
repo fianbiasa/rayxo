@@ -18,6 +18,7 @@ import (
 	"rayxo/agent/internal/jail"
 	"rayxo/agent/internal/mail"
 	"rayxo/agent/internal/mailqueue"
+	"rayxo/agent/internal/nodeapp"
 	"rayxo/agent/internal/panelport"
 	"rayxo/agent/internal/postgres"
 	"rayxo/agent/internal/procmon"
@@ -133,6 +134,10 @@ func Register(registry *rpc.Registry, config Config) {
 	}
 
 	for name, method := range redisMethods(sysuser.System{}, redis.New(redis.DefaultConfig())) {
+		registry.Register(name, method)
+	}
+
+	for name, method := range nodeappMethods(sysuser.System{}, nodeapp.New(nodeapp.DefaultConfig())) {
 		registry.Register(name, method)
 	}
 
