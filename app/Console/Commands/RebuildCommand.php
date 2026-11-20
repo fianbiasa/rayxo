@@ -27,6 +27,7 @@ class RebuildCommand extends Command
 
         $this->components->info('Queued: '.implode(', ', [
             "{$queued['websites']} websites",
+            "{$queued['node_apps']} Node.js apps",
             "{$queued['quotas']} disk quotas",
             "{$queued['crontabs']} crontabs",
             "{$queued['ftp_folders']} FTP folders",

@@ -3,8 +3,11 @@
 namespace Tests\Feature\Console;
 
 use App\Enums\AccountStatus;
+use App\Enums\NodeAppStatus;
 use App\Models\CronJob;
+use App\Models\Domain;
 use App\Models\FtpAccount;
+use App\Models\NodeApp;
 use App\Models\Task;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -34,7 +37,7 @@ class RebuildCommandTest extends TestCase
         User::factory()->admin()->create();
 
         $this->artisan('rayxo:rebuild')
-            ->expectsOutputToContain('Queued: 2 websites, 2 disk quotas, 2 crontabs, 2 FTP folders, 2 DNS zones, 0 mail domains.')
+            ->expectsOutputToContain('Queued: 2 websites, 0 Node.js apps, 2 disk quotas, 2 crontabs, 2 FTP folders, 2 DNS zones, 0 mail domains.')
             ->assertSuccessful();
 
         $this->assertEqualsCanonicalizing(
@@ -60,5 +63,33 @@ class RebuildCommandTest extends TestCase
             ['username' => 'budi', 'directory' => $budiFtp->directory],
             ['username' => 'sari', 'directory' => $sariFtp->directory],
         ], Task::query()->where('action', 'ftp.ensure_dir')->get()->pluck('payload')->all());
+    }
+
+    public function test_it_reprovisions_enabled_node_apps_so_their_sockets_are_recreated()
+    {
+        // On an upgrade the website rebuild re-points Nginx at each Node app's
+        // socket, so the rebuild must re-provision the apps or the socket would
+        // be missing.
+        Queue::fake();
+
+        $budi = User::factory()->create(['username' => 'budi']);
+        $domain = Domain::factory()->for($budi, 'account')->create(['name' => 'app.test']);
+        $app = new NodeApp;
+        $app->domain()->associate($domain);
+        $app->forceFill([
+            'entry' => 'index.mjs',
+            'port' => 40000,
+            'enabled' => true,
+            'status' => NodeAppStatus::Active,
+        ])->save();
+
+        $this->artisan('rayxo:rebuild')
+            ->expectsOutputToContain('1 Node.js apps')
+            ->assertSuccessful();
+
+        $this->assertSame(
+            ['app.test'],
+            Task::query()->where('action', 'nodeapp.provision')->get()->pluck('payload.domain')->all(),
+        );
     }
 }
