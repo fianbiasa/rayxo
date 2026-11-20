@@ -426,6 +426,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('server-settings/waf', [ServerSettingController::class, 'updateWaf'])
             ->middleware('throttle:10,1,server-waf')
             ->name('server-settings.waf');
+        Route::post('server-settings/update', [ServerSettingController::class, 'startUpdate'])
+            ->middleware('throttle:10,1,server-update')
+            ->name('server-settings.update');
+        Route::put('server-settings/update-channel', [ServerSettingController::class, 'setUpdateChannel'])
+            ->middleware('throttle:10,1,server-update-channel')
+            ->name('server-settings.update-channel');
         Route::put('server-settings/php-uploads', [ServerSettingController::class, 'updatePhpUploads'])
             ->middleware('throttle:10,1,server-uploads')
             ->name('server-settings.php-uploads');

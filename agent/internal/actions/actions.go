@@ -32,6 +32,7 @@ import (
 	"rayxo/agent/internal/sysfiles"
 	"rayxo/agent/internal/sysinfo"
 	"rayxo/agent/internal/sysuser"
+	"rayxo/agent/internal/updater"
 	"rayxo/agent/internal/version"
 	"rayxo/agent/internal/waf"
 	"rayxo/agent/internal/webserver"
@@ -91,7 +92,7 @@ func Register(registry *rpc.Registry, config Config) {
 		ports = panelport.New(panelport.DefaultConfig())
 	}
 
-	for name, method := range systemMethods(web, clock.New(clock.DefaultConfig()), changer, ports) {
+	for name, method := range systemMethods(web, clock.New(clock.DefaultConfig()), changer, ports, updater.New(updater.DefaultConfig())) {
 		registry.Register(name, method)
 	}
 

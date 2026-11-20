@@ -120,6 +120,8 @@ export const auditActionLabels: Record<string, string> = {
     'server.panel_port_cancelled': 'Percobaan port panel dibatalkan',
     'server.mail_send_limits_changed': 'Batas kirim email server diubah',
     'server.security_policy_changed': 'Kebijakan keamanan diubah',
+    'server.update_started': 'Update panel dimulai',
+    'server.update_channel_changed': 'Channel update diubah',
     'bfm.unbanned': 'IP dibuka dari blokir brute-force',
     'bfm.whitelist_changed': 'Whitelist brute-force diubah',
     'firewall.applied': 'Firewall diterapkan',

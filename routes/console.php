@@ -32,3 +32,4 @@ Schedule::command('model:prune', ['--model' => [WebmailSession::class, Bandwidth
 Schedule::command('rayxo:recount-ftp-quotas')->dailyAt('03:40')->withoutOverlapping();
 Schedule::command('rayxo:sync-mail-ssl')->dailyAt('04:20')->withoutOverlapping();
 Schedule::command('rayxo:sync-ssl-expiry')->dailyAt('04:30')->withoutOverlapping();
+Schedule::command('rayxo:check-updates')->dailyAt('05:10')->withoutOverlapping();

@@ -1,5 +1,6 @@
 import { Form, Head, router, useForm, usePoll } from '@inertiajs/react';
 import {
+    ArrowUpCircle,
     CheckCircle2,
     Clock,
     MailCheck,
@@ -58,6 +59,8 @@ import {
     securityPolicy as updateSecurityPolicy,
     telegram as updateTelegram,
     timezone as updateTimezone,
+    update as startUpdate,
+    updateChannel as setUpdateChannel,
     waf as updateWaf,
 } from '@/routes/admin/server-settings';
 import { destroy as removeTelegram } from '@/routes/admin/server-settings/telegram';
@@ -95,12 +98,41 @@ type PortTrial = {
     confirmed: boolean;
 };
 
+/** The latest one-click update: setup.sh of a new release running in the background. */
+type UpdateState = {
+    version: string;
+    started_at: string;
+    running: boolean;
+    exit_code: number | null;
+    error: string;
+    log: string[];
+} | null;
+
+/** A published release the panel can update to. */
+type Release = {
+    version: string;
+    tag: string;
+    prerelease: boolean;
+    setup_url: string;
+    notes_url: string;
+};
+
+type UpdateInfo = {
+    installed: string;
+    channel: 'stable' | 'beta';
+    stable: Release | null;
+    beta: Release | null;
+    available: Release | null;
+};
+
 type Props = {
     server: {
         hostname: string;
+        version: string;
         timezone: string;
         certificate: HostnameCertificate | null;
         reconfigure: Reconfigure;
+        update: UpdateState;
         panel_port: number;
         port_trial: PortTrial | null;
     } | null;
@@ -116,6 +148,7 @@ type Props = {
     ioncube: IonCube;
     clamav: Clamav;
     waf: Waf;
+    update: UpdateInfo;
     telegram_bot: string | null;
     security_policy: SecurityPolicy;
 };
@@ -165,6 +198,7 @@ export default function ServerSettings({
     ioncube,
     clamav,
     waf,
+    update,
     telegram_bot,
     security_policy,
 }: Props) {
@@ -177,6 +211,7 @@ export default function ServerSettings({
     const busy =
         certificate_request.pending ||
         server?.reconfigure?.running === true ||
+        server?.update?.running === true ||
         (server?.port_trial ?? null) !== null;
 
     // Follow a certificate request or a hostname change until it finishes.
@@ -230,6 +265,8 @@ export default function ServerSettings({
                     }
                 />
             )}
+
+            <UpdatePanel info={update} change={server?.update ?? null} />
 
             <div className="grid gap-6 lg:grid-cols-2">
                 {server !== null && (
@@ -948,6 +985,209 @@ function TelegramPanel({ bot }: { bot: string | null }) {
  * needs. It is ionCube's own software, downloaded from ionCube only once
  * the administrator turns it on.
  */
+function UpdatePanel({
+    info,
+    change,
+}: {
+    info: UpdateInfo;
+    change: UpdateState;
+}) {
+    const [open, setOpen] = useState(false);
+    const [channel, setChannel] = useState<UpdateInfo['channel']>(info.channel);
+
+    const channels: { value: UpdateInfo['channel']; label: string }[] = [
+        { value: 'stable', label: 'Stable (rilis resmi)' },
+        { value: 'beta', label: 'Beta (termasuk pra-rilis)' },
+    ];
+
+    const latest = info.channel === 'beta' ? info.beta : info.stable;
+
+    return (
+        <Panel
+            title="Update panel"
+            description="Perbarui RAYXO langsung dari sini. Agent menjalankan setup.sh rilis baru di latar belakang; panel sempat tidak menjawab sebentar saat layanannya dijalankan ulang. Update ditolak saat ada backup atau task yang berjalan."
+        >
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                <span>
+                    Versi terpasang:{' '}
+                    <span className="font-mono font-medium">
+                        {info.installed || 'tidak diketahui'}
+                    </span>
+                </span>
+                {latest && (
+                    <span className="text-muted-foreground">
+                        Terbaru ({info.channel}):{' '}
+                        <a
+                            className="font-mono underline"
+                            href={latest.notes_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            v{latest.version}
+                        </a>
+                    </span>
+                )}
+            </div>
+
+            <Form
+                {...setUpdateChannel.form()}
+                options={{ preserveScroll: true }}
+                className="mt-4 flex flex-wrap items-center gap-3"
+            >
+                {({ processing }) => (
+                    <>
+                        <Label htmlFor="update-channel" className="text-sm">
+                            Channel
+                        </Label>
+                        <input type="hidden" name="channel" value={channel} />
+                        <Select
+                            value={channel}
+                            onValueChange={(value) =>
+                                setChannel(value as UpdateInfo['channel'])
+                            }
+                        >
+                            <SelectTrigger
+                                id="update-channel"
+                                className="w-64 rounded-xl bg-card px-3.5 data-[size=default]:h-11"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                                {channels.map((option) => (
+                                    <SelectItem
+                                        key={option.value}
+                                        value={option.value}
+                                    >
+                                        {option.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <Button
+                            type="submit"
+                            variant="secondary"
+                            disabled={processing || channel === info.channel}
+                        >
+                            Simpan channel
+                        </Button>
+                    </>
+                )}
+            </Form>
+
+            <div className="mt-4">
+                {change?.running ? (
+                    <Alert>
+                        <Spinner />
+                        <AlertDescription>
+                            Memperbarui ke{' '}
+                            <span className="font-mono">v{change.version}</span>
+                            … Panel sempat tidak menjawab sebentar saat
+                            layanannya dijalankan ulang; halaman ini diperbarui
+                            sendiri.
+                        </AlertDescription>
+                    </Alert>
+                ) : change && change.exit_code === 0 ? (
+                    <Alert>
+                        <CheckCircle2 />
+                        <AlertDescription>
+                            Panel sudah diperbarui ke{' '}
+                            <span className="font-mono">v{change.version}</span>
+                            .
+                        </AlertDescription>
+                    </Alert>
+                ) : change && change.exit_code !== null ? (
+                    <Alert variant="destructive">
+                        <ShieldAlert />
+                        <AlertDescription className="break-words">
+                            Update ke{' '}
+                            <span className="font-mono">v{change.version}</span>{' '}
+                            gagal:{' '}
+                            {change.error ||
+                                'proses berhenti sebelum selesai; lihat log di bawah.'}
+                        </AlertDescription>
+                    </Alert>
+                ) : info.available ? (
+                    <div className="flex flex-wrap items-center gap-4">
+                        <StatusBadge
+                            status="suspended"
+                            label={`Update tersedia: v${info.available.version}`}
+                        />
+                        <Button onClick={() => setOpen(true)}>
+                            <ArrowUpCircle />
+                            Update ke v{info.available.version}
+                        </Button>
+                    </div>
+                ) : (
+                    <p className="text-sm text-muted-foreground">
+                        {info.installed === ''
+                            ? 'Versi terpasang tidak terbaca (agent tidak menjawab).'
+                            : 'Panel sudah versi terbaru di channel ini.'}
+                    </p>
+                )}
+            </div>
+
+            {change !== null && change.log.length > 0 && (
+                <details className="mt-4 text-sm" open={change.running}>
+                    <summary className="cursor-pointer text-muted-foreground">
+                        Log proses
+                    </summary>
+                    <pre className="mt-2 max-h-72 overflow-auto rounded-xl bg-muted p-3 text-xs leading-relaxed whitespace-pre-wrap">
+                        {change.log.join('\n')}
+                    </pre>
+                </details>
+            )}
+
+            <Dialog open={open} onOpenChange={setOpen}>
+                <DialogContent className="rounded-2xl">
+                    <Form
+                        {...startUpdate.form()}
+                        options={{ preserveScroll: true }}
+                        onSuccess={() => setOpen(false)}
+                        className="grid gap-5"
+                    >
+                        {({ processing }) => (
+                            <>
+                                <DialogHeader>
+                                    <DialogTitle>Update panel</DialogTitle>
+                                    <DialogDescription>
+                                        Perbarui dari{' '}
+                                        <span className="font-mono">
+                                            {info.installed || '?'}
+                                        </span>{' '}
+                                        ke{' '}
+                                        <span className="font-mono">
+                                            v{info.available?.version}
+                                        </span>
+                                        . Agent menjalankan setup.sh rilis baru;
+                                        beberapa menit, dan panel sempat tidak
+                                        menjawab saat layanan dijalankan ulang.
+                                        Pastikan tidak ada backup penting yang
+                                        sedang berjalan.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <DialogFooter className="gap-2">
+                                    <DialogClose asChild>
+                                        <Button
+                                            type="button"
+                                            variant="secondary"
+                                        >
+                                            Batal
+                                        </Button>
+                                    </DialogClose>
+                                    <Button type="submit" disabled={processing}>
+                                        {processing && <Spinner />}
+                                        Update sekarang
+                                    </Button>
+                                </DialogFooter>
+                            </>
+                        )}
+                    </Form>
+                </DialogContent>
+            </Dialog>
+        </Panel>
+    );
+}
+
 function WafPanel({ waf }: { waf: Waf }) {
     const [mode, setMode] = useState<Waf['mode']>(waf.mode);
 

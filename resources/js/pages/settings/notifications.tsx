@@ -65,6 +65,11 @@ const eventLabels: Record<string, { title: string; description: string }> = {
         description:
             'Backup otomatis dilewati karena ruang disk kurang, atau ada akun yang gagal di-backup.',
     },
+    update_available: {
+        title: 'Update tersedia',
+        description:
+            'Ada rilis RAYXO baru yang bisa dipasang dari Pengaturan Server.',
+    },
 };
 
 export default function Notifications({

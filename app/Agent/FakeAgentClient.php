@@ -32,6 +32,7 @@ final class FakeAgentClient implements AgentClient
             'system.set_timezone' => ['timezone' => $params['timezone'] ?? 'UTC', 'simulated' => true],
             'ssl.issue_hostname' => $this->serverSettings()['certificate'],
             'system.change_hostname' => ['hostname' => $params['hostname'] ?? '', 'simulated' => true],
+            'system.update' => ['version' => $params['version'] ?? '', 'setup_url' => $params['setup_url'] ?? '', 'simulated' => true],
             'panel.port_trial' => ['port' => $params['port'] ?? 0, 'previous' => 2222, 'expires_at' => now()->addMinutes(5)->startOfSecond()->toIso8601ZuluString(), 'confirmed' => false, 'simulated' => true],
             'panel.port_confirm' => ['confirmed' => true, 'simulated' => true],
             'panel.port_cancel' => ['closed' => true, 'simulated' => true],
@@ -357,7 +358,7 @@ final class FakeAgentClient implements AgentClient
             'memory' => ['total_mb' => 8192, 'used_mb' => 3172],
             'disk' => ['mount' => '/', 'total_gb' => 160, 'used_gb' => 48],
             'uptime_seconds' => 1_036_800,
-            'agent_version' => 'fake',
+            'agent_version' => 'dev',
             'software' => [
                 ['name' => 'Nginx', 'version' => '1.24.0'],
                 ['name' => 'Apache', 'version' => '2.4.58'],
@@ -515,6 +516,7 @@ final class FakeAgentClient implements AgentClient
     {
         return [
             'hostname' => 'server1.example.test',
+            'version' => 'dev',
             'timezone' => 'Asia/Jakarta',
             'certificate' => [
                 'hostname' => 'server1.example.test',
@@ -524,6 +526,7 @@ final class FakeAgentClient implements AgentClient
                 'lets_encrypt' => true,
             ],
             'reconfigure' => null,
+            'update' => null,
             'panel_port' => 2222,
             'port_trial' => null,
             'simulated' => true,
