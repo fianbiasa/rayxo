@@ -457,7 +457,10 @@ class ServerSettingController extends Controller
     public function scanClamav(Request $request): RedirectResponse
     {
         $validated = $request->validate([
-            'path' => ['required', 'string', 'max:255', 'starts_with:/home', 'not_regex:/\.\./'],
+            // Exactly /home or a path under it: "starts_with:/home" alone would
+            // also accept /homexyz, outside the hosting accounts' root. The
+            // not_regex keeps ".." out so the path cannot climb above /home.
+            'path' => ['required', 'string', 'max:255', 'regex:#^/home(/|$)#', 'not_regex:/\.\./'],
         ]);
 
         $result = $this->settings->scanClamav($validated['path'], $request->user());

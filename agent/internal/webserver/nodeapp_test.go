@@ -6,8 +6,8 @@ import (
 )
 
 // A domain running a Node.js app is reverse-proxied straight to the app on its
-// localhost port, with the headers a WebSocket upgrade needs, and gets no PHP
-// pool and no Apache vhost.
+// per-account unix socket, with the headers a WebSocket upgrade needs, and gets
+// no PHP pool and no Apache vhost.
 func TestApplyNodeAppProxiesToTheAppAndWritesNoApache(t *testing.T) {
 	env := newEnv(t)
 
@@ -23,7 +23,7 @@ func TestApplyNodeAppProxiesToTheAppAndWritesNoApache(t *testing.T) {
 
 	assertContains(t, "nginx vhost", nginx,
 		"server_name example.com www.example.com;",
-		"location / {\n        proxy_pass http://127.0.0.1:40123;",
+		"location / {\n        proxy_pass http://unix:/run/rayxo-nodeapp/budi/example.com.sock:;",
 		"proxy_http_version 1.1;",
 		"proxy_set_header Upgrade $http_upgrade;",
 		"proxy_set_header Connection $connection_upgrade;",
@@ -46,7 +46,7 @@ func TestApplyNodeAppProxiesToTheAppAndWritesNoApache(t *testing.T) {
 }
 
 // Over HTTPS the domain's app is reached the same way: Nginx terminates TLS and
-// proxies to the app on localhost (there is no Apache-over-TLS upstream).
+// proxies to the app on its unix socket (there is no Apache-over-TLS upstream).
 func TestApplyNodeAppOverHTTPSStillProxiesToTheApp(t *testing.T) {
 	env := newEnv(t)
 	env.writeCertificate("example.com", "example.com")
@@ -62,7 +62,7 @@ func TestApplyNodeAppOverHTTPSStillProxiesToTheApp(t *testing.T) {
 
 	nginx := env.read(env.nginxVhost("budi", "example.com"))
 
-	if strings.Count(nginx, "proxy_pass http://127.0.0.1:40200;") != 2 {
+	if strings.Count(nginx, "proxy_pass http://unix:/run/rayxo-nodeapp/budi/example.com.sock:;") != 2 {
 		t.Fatalf("both the HTTP and HTTPS servers should proxy to the app:\n%s", nginx)
 	}
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -61,8 +62,8 @@ func (f *fakePostgresServer) Export(_ context.Context, user, name string, out io
 	return err
 }
 
-func (f *fakePostgresServer) Import(_ context.Context, _ postgres.Identity, user, name, file string) error {
-	f.calls = append(f.calls, "import "+user+" "+name+" "+file)
+func (f *fakePostgresServer) Import(_ context.Context, _ postgres.Identity, user, name, file string, owners map[string]string) error {
+	f.calls = append(f.calls, "import "+user+" "+name+" "+file+" owners="+strconv.Itoa(len(owners)))
 
 	return f.fail
 }

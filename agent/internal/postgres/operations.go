@@ -52,10 +52,14 @@ func (m *Manager) Export(ctx context.Context, user, name string, out io.Writer) 
 
 // Import runs the SQL of file (plain or gzip) in database name of user. The
 // file is read as the account's Linux user (so it reaches only files the
-// account may read); the SQL is loaded as the postgres superuser but with the
-// session role set to the database's owner, so the restored objects belong to
-// the account's role. A failure the account should see is an *ImportError.
-func (m *Manager) Import(ctx context.Context, as Identity, user, name, file string) error {
+// account may read); the SQL is loaded by connecting to the database AS its
+// owning account role — a NOSUPERUSER role — not as the postgres superuser.
+// This confines the dump: a malicious statement such as RESET ROLE lands on
+// an unprivileged role, so it cannot reach another account's databases or run
+// COPY ... TO PROGRAM. owners maps each of the database's account roles to its
+// password; the password of the role that owns the database is used to
+// connect. A failure the account should see is an *ImportError.
+func (m *Manager) Import(ctx context.Context, as Identity, user, name, file string, owners map[string]string) error {
 	if err := ValidateName(user, name, MaxDatabaseName); err != nil {
 		return err
 	}
@@ -73,7 +77,16 @@ func (m *Manager) Import(ctx context.Context, as Identity, user, name, file stri
 		return err
 	}
 
-	return m.cfg.Import(ctx, as, name, owner, clean)
+	if owner == "" {
+		return &ImportError{Message: "give this database a user before importing into it"}
+	}
+
+	password, ok := owners[owner]
+	if !ok || ValidatePassword(password) != nil {
+		return errors.New("the owning role's password was not supplied")
+	}
+
+	return m.cfg.Import(ctx, as, name, owner, password, clean)
 }
 
 // databaseOwner returns the account role that owns database name, or "" when
@@ -108,9 +121,12 @@ func dump(ctx context.Context, database string, out io.Writer) error {
 	return nil
 }
 
-// importAs runs `gzip -dcf file` as as and pipes it, after a SET ROLE to
-// owner when there is one, into `psql` run as the postgres user on database.
-func importAs(ctx context.Context, as Identity, database, owner, file string) error {
+// importAs runs `gzip -dcf file` as as and pipes it into `psql` connected to
+// database AS the owning account role over a password (scram) loopback
+// connection. The role is NOSUPERUSER, so the loaded SQL — however hostile —
+// runs with only that role's privileges: no cross-account access, no
+// COPY ... TO PROGRAM. role and password are validated by the caller.
+func importAs(ctx context.Context, as Identity, database, role, password, file string) error {
 	readEnv := []string{"HOME=" + as.Home, "PATH=/usr/bin:/bin", "LC_ALL=C.UTF-8"}
 
 	read := exec.CommandContext(ctx, gzipProgram, "-dcf", "--", file)
@@ -120,9 +136,13 @@ func importAs(ctx context.Context, as Identity, database, owner, file string) er
 	read.Cancel = killGroup(read)
 	read.WaitDelay = 10 * time.Second
 
-	load := exec.CommandContext(ctx, sudoProgram, "-n", "-u", postgresUser,
-		psqlProgram, "--no-psqlrc", "--set=ON_ERROR_STOP=1", "--quiet", "--dbname="+database)
-	load.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C.UTF-8"}
+	// Connect over TCP loopback (not the local socket) so scram password auth
+	// signs the connecting role in as itself; no sudo, no superuser session,
+	// no SET ROLE. PGPASSWORD is only visible to root (psql runs as root).
+	load := exec.CommandContext(ctx, psqlProgram,
+		"--no-psqlrc", "--set=ON_ERROR_STOP=1", "--quiet",
+		"--host=127.0.0.1", "--username="+role, "--dbname="+database)
+	load.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C.UTF-8", "PGPASSWORD=" + password, "PGCONNECT_TIMEOUT=10"}
 	load.SysProcAttr = groupAttr()
 	load.Cancel = killGroup(load)
 	load.WaitDelay = 10 * time.Second
@@ -137,14 +157,7 @@ func importAs(ctx context.Context, as Identity, database, owner, file string) er
 		return err
 	}
 
-	// Set the session role so the restored objects belong to the account's
-	// role, not to postgres; a validated owner holds no quotes.
-	preamble := ""
-	if owner != "" {
-		preamble = "SET ROLE " + identifier(owner) + ";\n"
-	}
-
-	load.Stdin = io.MultiReader(strings.NewReader(preamble), pipe)
+	load.Stdin = pipe
 
 	if err := read.Start(); err != nil {
 		return err

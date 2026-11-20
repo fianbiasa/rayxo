@@ -239,7 +239,20 @@ func validateSetupURL(raw string) error {
 		return ErrInvalidURL
 	}
 
-	if !strings.HasPrefix(parsed.Path, releasePathPrefix) || path.Base(parsed.Path) != "setup.sh" {
+	// Reject any dot-segment, encoded or not, before trusting the path:
+	// url.Parse does not collapse "../", and GitHub (or any HTTP frontend) may
+	// resolve ".." / "%2e%2e" server-side to escape the release prefix. The
+	// Clean check then guarantees the path the prefix test sees is canonical.
+	if strings.Contains(strings.ToLower(parsed.EscapedPath()), "%2e") || strings.Contains(parsed.Path, "..") {
+		return ErrInvalidURL
+	}
+
+	clean := path.Clean(parsed.Path)
+	if clean != parsed.Path {
+		return ErrInvalidURL
+	}
+
+	if !strings.HasPrefix(clean, releasePathPrefix) || path.Base(clean) != "setup.sh" {
 		return ErrInvalidURL
 	}
 

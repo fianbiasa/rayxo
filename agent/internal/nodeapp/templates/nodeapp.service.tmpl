@@ -11,9 +11,21 @@ Group={{.User}}
 # Counts against the account's CPU and memory limits, like its PHP pools.
 Slice=rayxo-{{.User}}.slice
 WorkingDirectory={{.WorkDir}}
-# PORT, HOST and NODE_ENV plus the account's own variables; the agent writes it
-# 0600, owned by the account, so only the app's own user can read its secrets.
+# The socket variables plus NODE_ENV and the account's own variables; the agent
+# writes it 0600, owned by the account, so only the app's own user can read its
+# secrets.
 EnvironmentFile={{.EnvFile}}
+# The app listens on a unix socket, not a TCP port, so no other tenant can
+# reach it on shared loopback. As root (+), make the shared root traversable
+# and the per-account directory 0710 {{.User}}:{{.Group}} with the setgid bit,
+# so the socket the app creates there inherits group {{.Group}} and Nginx can
+# connect while no other account can even traverse the directory. UMask=0007
+# makes that socket group-writable (0770), which a connect() needs. A stale
+# socket from an unclean stop is removed so bind() does not fail.
+UMask=0007
+ExecStartPre=+/usr/bin/install -d -m 0755 -o root -g root {{.SocketRoot}}
+ExecStartPre=+/usr/bin/install -d -m 2710 -o {{.User}} -g {{.Group}} {{.SocketDir}}
+ExecStartPre=+/usr/bin/rm -f {{.Socket}}
 ExecStart={{.NodeBinary}} {{.Entry}}
 Restart=on-failure
 RestartSec=2

@@ -23,7 +23,7 @@ type postgresServer interface {
 	DeleteUser(ctx context.Context, user, name string) error
 	Report(ctx context.Context) ([]postgres.Size, error)
 	Export(ctx context.Context, user, name string, out io.Writer) error
-	Import(ctx context.Context, as postgres.Identity, user, name, file string) error
+	Import(ctx context.Context, as postgres.Identity, user, name, file string, owners map[string]string) error
 }
 
 // pgDatabaseParams are the params of pg.create_database and
@@ -94,14 +94,24 @@ func (p pgExportParams) validate() error {
 	)
 }
 
-// pgImportParams are the params of pg.import: the database, and the file in
-// the account's home (relative to it) to run in it. Remove deletes the file
-// afterwards, as the account, also when the import failed.
+// pgOwnerParam is one of the database's account roles and its password, so the
+// agent can connect as the role that owns the database to load the import.
+type pgOwnerParam struct {
+	Name     string `json:"name"`
+	Password string `json:"password"`
+}
+
+// pgImportParams are the params of pg.import: the database, the file in the
+// account's home (relative to it) to run in it, and the account's roles (with
+// passwords) so the import connects as the database's owning role rather than
+// the superuser. Remove deletes the file afterwards, as the account, also when
+// the import failed.
 type pgImportParams struct {
-	Username string `json:"username"`
-	Database string `json:"database"`
-	Path     string `json:"path"`
-	Remove   bool   `json:"remove"`
+	Username string         `json:"username"`
+	Database string         `json:"database"`
+	Path     string         `json:"path"`
+	Owners   []pgOwnerParam `json:"owners"`
+	Remove   bool           `json:"remove"`
 }
 
 func (p pgImportParams) account() string { return p.Username }
@@ -111,10 +121,29 @@ func (p pgImportParams) validate() error {
 		return errors.New("path is required")
 	}
 
-	return errors.Join(
+	errs := []error{
 		postgres.ValidateName(p.Username, p.Database, postgres.MaxDatabaseName),
 		files.CheckPath(p.Path),
-	)
+	}
+
+	for _, owner := range p.Owners {
+		errs = append(errs,
+			postgres.ValidateName(p.Username, owner.Name, postgres.MaxUserName),
+			postgres.ValidatePassword(owner.Password),
+		)
+	}
+
+	return errors.Join(errs...)
+}
+
+// ownerMap turns the owners list into a role-to-password map.
+func (p pgImportParams) ownerMap() map[string]string {
+	owners := make(map[string]string, len(p.Owners))
+	for _, owner := range p.Owners {
+		owners[owner.Name] = owner.Password
+	}
+
+	return owners
 }
 
 // pgReport is the result of pg.report.
@@ -272,7 +301,7 @@ func (d postgresActions) importFile(ctx context.Context, raw json.RawMessage) (a
 	}
 
 	as := postgres.Identity{UID: user.UID, GID: user.GID, Home: user.Home}
-	err = d.server.Import(ctx, as, params.Username, params.Database, user.Home+"/"+params.Path)
+	err = d.server.Import(ctx, as, params.Username, params.Database, user.Home+"/"+params.Path, params.ownerMap())
 
 	if params.Remove {
 		account := files.Account{UID: user.UID, GID: user.GID, Home: user.Home}

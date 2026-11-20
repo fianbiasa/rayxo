@@ -73,6 +73,46 @@ func CompareFile(kind, path string, expected []byte) Target {
 	return Target{Kind: kind, Path: path, Drifted: true, Diff: Diff(expected, actual)}
 }
 
+// CompareFileMasked is like CompareFile but passes every line of both the
+// expected and the on-disk content through mask before building the diff, so a
+// secret in the file (a password, an API key, an account's own env values)
+// never appears in the reported diff. Whether the file drifted is still decided
+// from the real content, so a change to a secret alone is still reported as
+// drift — only its value is hidden. When masking hides the whole difference,
+// the diff says a redacted value changed rather than showing nothing.
+func CompareFileMasked(kind, path string, expected []byte, mask func(string) string) Target {
+	actual, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Target{Kind: kind, Path: path, Drifted: true, Missing: true, Diff: "file is missing"}
+		}
+
+		return Target{Kind: kind, Path: path, Drifted: true, Diff: "could not read file: " + err.Error()}
+	}
+
+	if bytes.Equal(actual, expected) {
+		return Target{Kind: kind, Path: path}
+	}
+
+	diff := Diff(maskLines(expected, mask), maskLines(actual, mask))
+	if strings.TrimSpace(diff) == "" {
+		diff = "a redacted value changed"
+	}
+
+	return Target{Kind: kind, Path: path, Drifted: true, Diff: diff}
+}
+
+// maskLines applies mask to each line of content and joins them back, so a
+// masked diff never reveals a secret value.
+func maskLines(content []byte, mask func(string) string) []byte {
+	lines := strings.Split(string(content), "\n")
+	for i, line := range lines {
+		lines[i] = mask(line)
+	}
+
+	return []byte(strings.Join(lines, "\n"))
+}
+
 // CompareAbsent checks that path does NOT exist, for config RAYXO would have
 // removed (an account without limits, a disabled service). A file still there
 // is drift; a missing file is clean. It never writes.

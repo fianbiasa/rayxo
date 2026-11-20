@@ -177,6 +177,8 @@ class PostgresManagementTest extends TestCase
     {
         $account = User::factory()->create(['username' => 'budi']);
         $database = $this->database($account, 'budi_shop');
+        $role = PostgresUser::factory()->create(['user_id' => $account->id]);
+        $database->users()->attach($role);
 
         $this->actingAs($account)
             ->post(route('postgres.import', $database), ['path' => 'tmp/rayxo-import-abcd1234.sql'])
@@ -186,5 +188,24 @@ class PostgresManagementTest extends TestCase
         $task = Task::query()->where('action', 'pg.import')->sole();
         $this->assertSame('budi_shop', $task->payload['database']);
         $this->assertTrue($task->payload['remove']);
+
+        // The owning roles and their passwords are sent so the agent connects
+        // as the database's owner (a NOSUPERUSER role), never the superuser.
+        $this->assertSame([['name' => $role->name, 'password' => $role->password]], $task->payload['owners']);
+    }
+
+    public function test_an_import_into_a_database_without_a_user_is_refused()
+    {
+        $account = User::factory()->create(['username' => 'budi']);
+        $database = $this->database($account, 'budi_shop');
+
+        // With no account role owning the database, the agent would have to load
+        // the dump as the superuser; refuse rather than do that.
+        $this->actingAs($account)
+            ->post(route('postgres.import', $database), ['path' => 'tmp/rayxo-import-abcd1234.sql'])
+            ->assertSessionHasErrors('file');
+
+        $this->assertNull($database->fresh()->import_status);
+        $this->assertDatabaseCount('tasks', 0);
     }
 }

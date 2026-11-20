@@ -23,6 +23,11 @@ var templates = template.Must(template.New("").Option("missingkey=error").ParseF
 
 var phpVersionDirPattern = regexp.MustCompile(`^[0-9]\.[0-9]$`)
 
+// nodeSocketRoot is where the nodeapp package puts each account's app sockets
+// (nodeapp.socketRoot). Nginx reverse-proxies a Node app domain to
+// nodeSocketRoot/<user>/<domain>.sock; both sides must agree on the path.
+const nodeSocketRoot = "/run/rayxo-nodeapp"
+
 // siteData is what the vhost and index.html templates see.
 type siteData struct {
 	User            string
@@ -255,14 +260,17 @@ func (m *Manager) siteData(site Site) siteData {
 	}
 }
 
-// nodeProxyTo is the localhost address of the domain's Node.js app, or "" when
-// the domain is not in Node app mode.
+// nodeProxyTo is the address of the domain's Node.js app, or "" when the domain
+// is not in Node app mode. The app listens on a per-account unix socket, not a
+// loopback TCP port, so no other tenant can reach it; the path matches the one
+// the nodeapp package points the app at (socketRoot/<user>/<domain>.sock). The
+// trailing colon ends the socket path in Nginx's http://unix:<path>: syntax.
 func nodeProxyTo(site Site) string {
 	if !site.NodeApp {
 		return ""
 	}
 
-	return fmt.Sprintf("http://127.0.0.1:%d", site.NodePort)
+	return "http://unix:" + nodeSocketRoot + "/" + site.User + "/" + site.Domain + ".sock:"
 }
 
 // sitePoolData returns the pool of site: named after its domain, with a

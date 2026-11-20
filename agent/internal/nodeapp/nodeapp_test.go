@@ -77,21 +77,29 @@ func TestProvisionWritesEnvUnitAndStarts(t *testing.T) {
 		t.Fatalf("read env: %v", err)
 	}
 
+	socket := "/run/rayxo-nodeapp/budi/example.com.sock"
 	for _, want := range []string{
 		"DATABASE_URL=mysql://u:p@127.0.0.1/db",
 		"APP_KEY=secret",
 		"NODE_ENV=production",
-		"HOST=127.0.0.1",
-		"PORT=40123",
+		"NITRO_UNIX_SOCKET=" + socket,
+		"RAYXO_NODE_SOCKET=" + socket,
+		"PORT=" + socket,
 	} {
 		if !strings.Contains(string(env), want) {
 			t.Errorf("env missing %q\n%s", want, env)
 		}
 	}
 
-	// Our PORT/HOST/NODE_ENV must come after the account's own vars so they win.
-	if strings.Index(string(env), "PORT=40123") < strings.Index(string(env), "DATABASE_URL=") {
-		t.Error("PORT should be written after the account's own variables")
+	// The app must never be told a TCP port or host: that would turn
+	// server.listen(process.env.PORT) back into a shared-loopback listener.
+	if strings.Contains(string(env), "HOST=") {
+		t.Errorf("env should set no HOST (the app listens on a unix socket)\n%s", env)
+	}
+
+	// Our socket/NODE_ENV vars must come after the account's own vars so they win.
+	if strings.Index(string(env), "NITRO_UNIX_SOCKET=") < strings.Index(string(env), "DATABASE_URL=") {
+		t.Error("the socket variables should be written after the account's own variables")
 	}
 
 	unit, err := os.ReadFile(filepath.Join(m.cfg.UnitDir, "rayxo-nodeapp-example.com.service"))
@@ -106,6 +114,12 @@ func TestProvisionWritesEnvUnitAndStarts(t *testing.T) {
 		"WorkingDirectory=/home/budi/domains/example.com/public_html",
 		"ExecStart=/usr/bin/node .output/server/index.mjs",
 		"EnvironmentFile=" + m.cfg.ConfDir + "/example.com.env",
+		// The socket directory is 0710 budi:rayxo-nginx with the setgid bit, so
+		// only budi and Nginx can reach the socket, never another tenant.
+		"UMask=0007",
+		"ExecStartPre=+/usr/bin/install -d -m 0755 -o root -g root /run/rayxo-nodeapp",
+		"ExecStartPre=+/usr/bin/install -d -m 2710 -o budi -g rayxo-nginx /run/rayxo-nodeapp/budi",
+		"ExecStartPre=+/usr/bin/rm -f /run/rayxo-nodeapp/budi/example.com.sock",
 	} {
 		if !strings.Contains(string(unit), want) {
 			t.Errorf("unit missing %q\n%s", want, unit)

@@ -25,8 +25,11 @@ class NodeAppRequest extends WebsiteSettingsRequest
     {
         return [
             // A path relative to the document root: no leading slash and no
-            // ".." segment, so it cannot point outside the app.
-            'entry' => ['required', 'string', 'max:255', 'regex:/^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[^\x00\r\n]+$/'],
+            // ".." segment, so it cannot point outside the app; and a single
+            // token with no whitespace and no leading dash, so the agent runs
+            // it as one argument to node and it cannot smuggle extra options
+            // (the agent's validateNodeEntry enforces the same).
+            'entry' => ['required', 'string', 'max:255', 'regex:/^(?![-\/])(?!.*(?:^|\/)\.\.(?:\/|$))[^\x00\t\r\n ]+$/'],
             'env' => ['present', 'array', 'max:'.self::MAX_ENV],
             'env.*' => ['array:name,value'],
             'env.*.name' => ['required', 'string', 'distinct', 'regex:/^[A-Za-z_][A-Za-z0-9_]*$/'],

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -24,10 +25,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon $checked_at
  */
 #[Hidden(['payload'])]
+#[Fillable(['user_id', 'kind', 'path', 'apply_action', 'payload', 'missing', 'diff', 'checked_at'])]
 class ConfigDrift extends Model
 {
-    protected $guarded = [];
-
     protected function casts(): array
     {
         return [

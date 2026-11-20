@@ -116,11 +116,14 @@ func TestStartRejectsForeignURL(t *testing.T) {
 	manager, systemd, downloaded, _ := newManager(t)
 
 	bad := []string{
-		"http://github.com/fianbiasa/rayxo/releases/download/v0.9.0/setup.sh", // not https
-		"https://evil.com/fianbiasa/rayxo/releases/download/v0.9.0/setup.sh",  // wrong host
-		"https://github.com/someone/else/releases/download/v0.9.0/setup.sh",   // wrong repo path
-		"https://github.com/fianbiasa/rayxo/releases/download/v0.9.0/evil.sh", // not setup.sh
-		"https://github.com/fianbiasa/rayxo/archive/setup.sh",                 // wrong path prefix
+		"http://github.com/fianbiasa/rayxo/releases/download/v0.9.0/setup.sh",                                       // not https
+		"https://evil.com/fianbiasa/rayxo/releases/download/v0.9.0/setup.sh",                                        // wrong host
+		"https://github.com/someone/else/releases/download/v0.9.0/setup.sh",                                         // wrong repo path
+		"https://github.com/fianbiasa/rayxo/releases/download/v0.9.0/evil.sh",                                       // not setup.sh
+		"https://github.com/fianbiasa/rayxo/archive/setup.sh",                                                       // wrong path prefix
+		"https://github.com/fianbiasa/rayxo/releases/download/../../../attacker/evil/releases/download/v1/setup.sh", // path traversal
+		"https://github.com/fianbiasa/rayxo/releases/download/%2e%2e/%2e%2e/attacker/releases/download/v1/setup.sh", // encoded traversal
+		"https://github.com@evil.com/fianbiasa/rayxo/releases/download/v0.9.0/setup.sh",                             // userinfo trick
 		"not a url at all",
 	}
 

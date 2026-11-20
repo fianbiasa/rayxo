@@ -68,10 +68,10 @@ type Config struct {
 	// Dump runs pg_dump of a database as the postgres user, writing to out.
 	Dump func(ctx context.Context, database string, out io.Writer) error
 	// Import runs the SQL of file (plain or gzip) into database, read as the
-	// account user and loaded as the postgres user with the session role set
-	// to owner (when not empty). A failure the account should see is an
+	// account user and loaded by connecting as role (a NOSUPERUSER account
+	// role) with its password. A failure the account should see is an
 	// *ImportError.
-	Import func(ctx context.Context, as Identity, database, owner, file string) error
+	Import func(ctx context.Context, as Identity, database, role, password, file string) error
 }
 
 // DefaultConfig returns the operations used on a server.
