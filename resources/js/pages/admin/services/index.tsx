@@ -518,6 +518,26 @@ function kindLabel(kind: string): string {
             return 'Vhost Apache';
         case 'php-pool':
             return 'Pool PHP-FPM';
+        case 'php-pool-master':
+            return 'Pool PHP-FPM (master)';
+        case 'php-guard':
+            return 'php-guard';
+        case 'htpasswd':
+            return 'Folder berpassword (htpasswd)';
+        case 'suspended-page':
+            return 'Halaman suspend';
+        case 'cgroup-slice':
+            return 'Batas resource (slice)';
+        case 'cgroup-dropin':
+            return 'Batas resource (sesi)';
+        case 'login-site':
+            return 'Domain login reseller';
+        case 'redis-conf':
+            return 'Config Redis';
+        case 'node-env':
+            return 'Node.js (environment)';
+        case 'node-unit':
+            return 'Node.js (service)';
         case 'dns-zone':
             return 'Zone DNS';
         case 'mail-sieve':

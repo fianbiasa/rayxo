@@ -46,7 +46,7 @@ class QuotaService
      *
      * @return bool Whether the quota was queued.
      */
-    public function apply(User $account, ?User $actor = null): bool
+    public function apply(User $account, ?User $actor = null, string $action = 'account.set_quota'): bool
     {
         if (! $account->hasRole(Role::User) || ! in_array($account->status, [AccountStatus::Active, AccountStatus::Suspended], true)) {
             return false;
@@ -54,7 +54,7 @@ class QuotaService
 
         $package = $account->package;
 
-        $this->tasks->dispatch('account.set_quota', [
+        $this->tasks->dispatch($action, [
             'username' => $account->username,
             'disk_mb' => $package->disk_mb ?? 0,
             'inodes' => $package->inodes ?? 0,
@@ -147,6 +147,15 @@ class QuotaService
     }
 
     /**
+     * Queue a drift check of every account's resource-limit slice, for the
+     * config-drift scan.
+     */
+    public function checkAll(?User $actor = null): int
+    {
+        return $this->applyToEach(User::query(), $actor, 'account.check_slice');
+    }
+
+    /**
      * Ask the server how much disk space and how many inodes every hosting
      * account uses, store it, and remember whether the server enforces
      * quotas. Accounts the server does not report keep their last
@@ -218,7 +227,7 @@ class QuotaService
      *
      * @param  Builder<User>  $query
      */
-    private function applyToEach(Builder $query, ?User $actor): int
+    private function applyToEach(Builder $query, ?User $actor, string $action = 'account.set_quota'): int
     {
         $queued = 0;
 
@@ -226,8 +235,8 @@ class QuotaService
             ->where('role', Role::User)
             ->whereIn('status', [AccountStatus::Active, AccountStatus::Suspended])
             ->orderBy('id')
-            ->each(function (User $account) use ($actor, &$queued): void {
-                if ($this->apply($account, $actor)) {
+            ->each(function (User $account) use ($actor, $action, &$queued): void {
+                if ($this->apply($account, $actor, $action)) {
                     $queued++;
                 }
             });

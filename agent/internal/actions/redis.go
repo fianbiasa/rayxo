@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"rayxo/agent/internal/drift"
 	"rayxo/agent/internal/redis"
 	"rayxo/agent/internal/rpc"
 	"rayxo/agent/internal/validate"
@@ -14,6 +15,7 @@ import (
 // redisServer is what the redis.* actions need. *redis.Manager implements it.
 type redisServer interface {
 	Provision(ctx context.Context, in redis.Instance) error
+	Check(in redis.Instance) (drift.Report, error)
 	Deprovision(ctx context.Context, user string) error
 	Running(ctx context.Context, user string) (bool, error)
 }
@@ -84,6 +86,7 @@ func redisMethods(system accountSystem, server redisServer) map[string]rpc.Metho
 
 	return map[string]rpc.Method{
 		"redis.provision":   {Handler: actions.provision, LockKey: webLockKey[redisProvisionParams]},
+		"redis.check":       {Handler: actions.check, LockKey: webLockKey[redisProvisionParams]},
 		"redis.deprovision": {Handler: actions.deprovision, LockKey: webLockKey[redisAccountParams]},
 		"redis.status":      {Handler: actions.status, LockKey: webLockKey[redisAccountParams]},
 	}
@@ -115,6 +118,33 @@ func (r redisActions) provision(ctx context.Context, raw json.RawMessage) (any, 
 	}
 
 	return struct{}{}, nil
+}
+
+// check implements redis.check: report whether the account's Redis config
+// drifted, without writing.
+func (r redisActions) check(ctx context.Context, raw json.RawMessage) (any, error) {
+	params, err := decodeWebParams[redisProvisionParams](raw)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := r.accounts.requireAccount(ctx, params.Username)
+	if err != nil {
+		return nil, err
+	}
+
+	report, err := r.server.Check(redis.Instance{
+		User:        user.Name,
+		UID:         user.UID,
+		GID:         user.GID,
+		Password:    params.Password,
+		MaxMemoryMB: params.MaxMemoryMB,
+	})
+	if err != nil {
+		return nil, redisError(err, "check Redis for "+params.Username)
+	}
+
+	return report, nil
 }
 
 // deprovision implements redis.deprovision. A missing instance or account

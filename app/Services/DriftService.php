@@ -27,6 +27,10 @@ class DriftService
         'dns.check_zone' => 'dns.sync_zone',
         'mail.check_sieve' => 'mail.sieve_apply',
         'waf.check' => 'waf.apply',
+        'account.check_slice' => 'account.set_quota',
+        'redis.check' => 'redis.provision',
+        'nodeapp.check' => 'nodeapp.provision',
+        'panel.check_login_domain' => 'panel.add_login_domain',
     ];
 
     public function __construct(
@@ -35,6 +39,10 @@ class DriftService
         private DnsService $dns,
         private MailRulesService $mailRules,
         private ServerSettingsService $settings,
+        private QuotaService $quotas,
+        private RedisService $redis,
+        private NodeAppService $nodeApps,
+        private BrandingService $branding,
         private AuditLogger $audit,
     ) {}
 
@@ -56,6 +64,10 @@ class DriftService
         $queued += $this->domains->checkAll($actor);
         $queued += $this->dns->checkAll($actor);
         $queued += $this->mailRules->checkAll($actor);
+        $queued += $this->quotas->checkAll($actor);
+        $queued += $this->redis->checkAll($actor);
+        $queued += $this->nodeApps->checkAll($actor);
+        $queued += $this->branding->checkAll($actor);
 
         Setting::query()->updateOrCreate(['key' => self::LAST_SCAN], ['value' => now()->toIso8601ZuluString('microsecond')]);
         $this->audit->record('server.drift_scanned', null, ['checks' => $queued], $actor);

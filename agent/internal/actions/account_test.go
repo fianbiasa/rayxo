@@ -19,6 +19,7 @@ import (
 
 	"rayxo/agent/internal/cgroup"
 	"rayxo/agent/internal/database"
+	"rayxo/agent/internal/drift"
 	"rayxo/agent/internal/jail"
 	"rayxo/agent/internal/quota"
 	"rayxo/agent/internal/rpc"
@@ -73,7 +74,10 @@ func TestAccountMethodsRejectUnknownParams(t *testing.T) {
 }
 
 func TestAccountMethodsLockTheAccount(t *testing.T) {
-	params := map[string]string{"account.set_quota": `{"username":"budi","disk_mb":1024,"inodes":0}`}
+	params := map[string]string{
+		"account.set_quota":   `{"username":"budi","disk_mb":1024,"inodes":0}`,
+		"account.check_slice": `{"username":"budi","disk_mb":1024,"inodes":0}`,
+	}
 
 	system := newFakeSystem()
 	for name, method := range accountMethods(system, system, system.quotaManager(), system.databases(), system.postgres(), system, system.limits()) {
@@ -746,6 +750,12 @@ func (l fakeLimits) Remove(_ context.Context, user string, uid int) error {
 	return l.f.record("unlimit %s %d", user, uid)
 }
 
+func (l fakeLimits) Check(user string, uid int, _ cgroup.Limits) (drift.Report, error) {
+	_ = l.f.record("check-limits %s %d", user, uid)
+
+	return drift.Report{}, nil
+}
+
 // unreachableLimits fails the test when an account method gets as far as
 // the resource limits, for systems that must fail before that.
 type unreachableLimits struct {
@@ -762,6 +772,12 @@ func (u unreachableLimits) Remove(_ context.Context, user string, _ int) error {
 	u.t.Errorf("the resource limits were reached for %s", user)
 
 	return errors.New("unreachable")
+}
+
+func (u unreachableLimits) Check(user string, _ int, _ cgroup.Limits) (drift.Report, error) {
+	u.t.Errorf("the resource limits were reached for %s", user)
+
+	return drift.Report{}, errors.New("unreachable")
 }
 
 type fakeDatabases struct {

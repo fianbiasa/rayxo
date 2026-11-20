@@ -73,6 +73,17 @@ func CompareFile(kind, path string, expected []byte) Target {
 	return Target{Kind: kind, Path: path, Drifted: true, Diff: Diff(expected, actual)}
 }
 
+// CompareAbsent checks that path does NOT exist, for config RAYXO would have
+// removed (an account without limits, a disabled service). A file still there
+// is drift; a missing file is clean. It never writes.
+func CompareAbsent(kind, path string) Target {
+	if _, err := os.Stat(path); err == nil {
+		return Target{Kind: kind, Path: path, Drifted: true, Diff: "file is present but should have been removed"}
+	}
+
+	return Target{Kind: kind, Path: path}
+}
+
 // Compare checks arbitrary expected vs. actual content (for non-file targets,
 // e.g. a rendered DNS zone), returning a target named by kind and name.
 func Compare(kind, name string, expected, actual []byte) Target {
