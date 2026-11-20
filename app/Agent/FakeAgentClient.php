@@ -396,6 +396,9 @@ final class FakeAgentClient implements AgentClient
         return ['databases' => $databases, 'simulated' => true];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     private function postgresReport(): array
     {
         $databases = PostgresDatabase::query()
