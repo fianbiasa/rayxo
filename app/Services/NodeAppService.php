@@ -169,13 +169,22 @@ class NodeAppService
 
     private function dispatchProvision(Domain $domain, NodeApp $app, ?User $actor, string $action = 'nodeapp.provision'): void
     {
-        $this->tasks->dispatch($action, [
+        $params = [
             'username' => $domain->account->username,
             'domain' => $domain->name,
             'entry' => $app->entry,
-            'env' => (object) ($app->env ?? []),
             'port' => $app->port,
-        ], $domain->account, $actor);
+        ];
+
+        // Only send env when the app has variables. The task payload is stored
+        // and reloaded as an associative array, so an empty map would reach the
+        // agent as a JSON array ([]) and fail its map[string]string decode; a
+        // missing env is simply the agent's nil (empty) map.
+        if (! empty($app->env)) {
+            $params['env'] = (object) $app->env;
+        }
+
+        $this->tasks->dispatch($action, $params, $domain->account, $actor);
     }
 
     /**

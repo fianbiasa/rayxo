@@ -3658,6 +3658,24 @@ HBA
 
     quietly systemctl restart postgresql
 
+    # Right after a restart PostgreSQL may still be starting up and refuse
+    # connections, which would make the lockdown below fail silently. Wait for
+    # it to accept connections first (up to ~30s).
+    local pg_ready=
+    local _
+    for _ in $(seq 1 30); do
+        if runuser -u postgres -- pg_isready -q >/dev/null 2>&1; then
+            pg_ready=1
+            break
+        fi
+        sleep 1
+    done
+    if [[ -z "$pg_ready" ]]; then
+        warn "PostgreSQL belum menerima koneksi setelah restart; penguncian database maintenance dilewati"
+
+        return
+    fi
+
     # Account roles (NOSUPERUSER) could otherwise connect to the maintenance
     # databases and read every tenant's database and role names from the
     # catalogs there. Deny PUBLIC that connection; the postgres superuser the

@@ -84,6 +84,25 @@ class NodeAppManagementTest extends TestCase
         $this->assertDatabaseHas('tasks', ['action' => 'web.apply_domain', 'user_id' => $this->account->id]);
     }
 
+    public function test_enabling_with_no_environment_omits_env_from_the_provision_payload()
+    {
+        // The task payload is stored and reloaded as an associative array, so
+        // an empty env map would reach the agent as a JSON array ([]) and fail
+        // its map[string]string decode. With no variables the key is omitted
+        // instead, which the agent reads as an empty (nil) map.
+        $this->actingAs($this->account)
+            ->post(route('domains.node-app.store', $this->domain), [
+                'entry' => 'index.mjs',
+                'env' => [],
+            ])
+            ->assertRedirect();
+
+        $this->assertNull($this->domain->nodeApp()->sole()->env);
+
+        $provision = Task::query()->where('action', 'nodeapp.provision')->sole();
+        $this->assertArrayNotHasKey('env', $provision->payload);
+    }
+
     public function test_enabling_gives_each_app_a_distinct_port()
     {
         $this->enableApp();
