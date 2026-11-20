@@ -155,9 +155,11 @@ func (m *Manager) Start(ctx context.Context, target Target) error {
 		return fmt.Errorf("write %s: %w", m.cfg.StateFile, err)
 	}
 
+	// setup.sh needs bash (it uses "set -o pipefail"), so run it with /bin/bash,
+	// not /bin/sh (which is dash on Debian/Ubuntu).
 	args := []string{
 		"--unit=" + m.cfg.Unit, "--collect", "--quiet", "--description=RAYXO: update the panel",
-		"/bin/sh", "-c", script, m.cfg.Unit, m.cfg.LogFile, m.exitFile(), "/bin/sh", m.cfg.SetupPath, "--yes",
+		"/bin/sh", "-c", script, m.cfg.Unit, m.cfg.LogFile, m.exitFile(), "/bin/bash", m.cfg.SetupPath, "--yes",
 	}
 
 	if _, err := m.cfg.Run(ctx, systemdRunProgram, args...); err != nil {

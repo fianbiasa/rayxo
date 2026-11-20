@@ -70,7 +70,7 @@ func TestStartDownloadsAndRunsSetupInItsOwnUnit(t *testing.T) {
 	want := []string{
 		systemdRunProgram, "--unit=rayxo-update", "--collect", "--quiet", "--description=RAYXO: update the panel",
 		"/bin/sh", "-c", script, "rayxo-update", cfg.LogFile, cfg.StateFile + ".exit",
-		"/bin/sh", cfg.SetupPath, "--yes",
+		"/bin/bash", cfg.SetupPath, "--yes",
 	}
 	if got := systemd.calls[len(systemd.calls)-1]; !slices.Equal(got, want) {
 		t.Fatalf("systemd-run call =\n  %q\nwant\n  %q", got, want)
