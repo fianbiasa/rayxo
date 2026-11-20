@@ -86,6 +86,9 @@ type applyDomainParams struct {
 	// app on NodePort instead of to Apache/PHP.
 	NodeApp  bool `json:"node_app"`
 	NodePort int  `json:"node_port"`
+	// ModSecurity overrides the global WAF mode for this website: "off",
+	// "detection" or "on"; empty inherits the server-wide default.
+	ModSecurity string `json:"modsecurity"`
 }
 
 // protectedDirectoryParams are one protected directory of
@@ -204,6 +207,7 @@ func (p applyDomainParams) site(user sysuser.User) webserver.Site {
 		IPv6Address:          p.IPv6,
 		NodeApp:              p.NodeApp,
 		NodePort:             p.NodePort,
+		ModSecurity:          webserver.ModSecurityMode(p.ModSecurity),
 	}
 }
 

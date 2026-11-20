@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Enums\ModSecurityMode;
 use App\Models\Domain;
 use App\Models\ProtectedDirectory;
 use App\Models\ProtectedDirectoryUser;
@@ -141,6 +142,12 @@ final class WebSettings
         // the account's package allows it.
         if ($website->cgi_enabled && AccountLimits::for($website->account)->allowsCgi()) {
             $params['cgi'] = true;
+        }
+
+        // A website follows the server-wide ModSecurity mode unless it set its
+        // own; only an override is sent, so "inherit" leaves the vhost default.
+        if ($website->modsecurity_mode !== ModSecurityMode::Inherit) {
+            $params['modsecurity'] = $website->modsecurity_mode->value;
         }
 
         return $params;

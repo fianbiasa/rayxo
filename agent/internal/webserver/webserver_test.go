@@ -548,7 +548,8 @@ func TestWebsiteWithoutPHPRefusesScriptsAndLosesItsPool(t *testing.T) {
 
 	apache := env.read(env.apacheVhost("budi", "example.com"))
 	assertContains(t, "Apache vhost", apache,
-		"    ErrorLog "+env.cfg.LogDir+"/example.com.apache-error.log\n\n    DirectoryIndex index.html index.htm\n",
+		"    ErrorLog "+env.cfg.LogDir+"/example.com.apache-error.log\n",
+		"\n    DirectoryIndex index.html index.htm\n",
 		"<FilesMatch \"\\.(php[0-9]?|phtml|phar)$\">\n        Require all denied\n    </FilesMatch>",
 	)
 	assertNotContains(t, "Apache vhost", apache, "SetHandler", "index.php")

@@ -23,6 +23,7 @@ use App\Support\PhpSettings;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -75,6 +76,7 @@ class ServerSettingController extends Controller
             'database_remote_access' => $this->databaseTools->remoteAccessEnabled(),
             'ioncube' => $this->settings->ionCube(),
             'clamav' => $this->settings->clamav(),
+            'waf' => $this->settings->waf(),
             'telegram_bot' => $this->telegram->username(),
             'mail_limits' => [
                 ...$this->settings->mailSendLimits(),
@@ -381,6 +383,29 @@ class ServerSettingController extends Controller
             'type' => 'success',
             'message' => $enabled ? __('ClamAV is being turned on; downloading signatures can take a few minutes.') : __('ClamAV is off.'),
         ]);
+
+        return back();
+    }
+
+    /**
+     * Set the server-wide ModSecurity (WAF) mode: off, detection-only or on.
+     * It is the default for every website that does not override it.
+     */
+    public function updateWaf(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'mode' => ['required', Rule::in(ServerSettingsService::WAF_MODES)],
+        ]);
+
+        $state = $this->settings->setWaf((string) $validated['mode'], $request->user());
+
+        $message = match ($state['mode']) {
+            'on' => __('ModSecurity is on: the OWASP rules now block offending requests.'),
+            'detection' => __('ModSecurity is in detection-only mode: offending requests are logged, not blocked.'),
+            default => __('ModSecurity is off.'),
+        };
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
 
         return back();
     }

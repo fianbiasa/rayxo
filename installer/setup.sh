@@ -1268,7 +1268,11 @@ DEBCONF
     block_service_starts
     # apache2-suexec-custom: CGI scripts of websites run as their account,
     # with the document root set to /home (configure_web).
-    quietly "${apt[@]}" install apache2 apache2-suexec-custom pure-ftpd-mysql
+    # libapache2-mod-security2 + modsecurity-crs: the ModSecurity web
+    # application firewall and the OWASP Core Rule Set. The module is loaded
+    # (configure_web), but the engine stays off until the admin turns it on
+    # from the panel (configure_modsec writes the default-off engine file).
+    quietly "${apt[@]}" install apache2 apache2-suexec-custom pure-ftpd-mysql libapache2-mod-security2 modsecurity-crs
     # Without the bind backend PowerDNS recommends: its settings stop
     # PowerDNS from starting when only the MySQL backend is launched.
     quietly "${apt[@]}" install --no-install-recommends pdns-server pdns-backend-mysql
@@ -3229,8 +3233,21 @@ CONF
     # expires: sites moved from other panels often set ExpiresActive in their
     # .htaccess without <IfModule>, which is a 500 when the module is off.
     quietly a2dismod -q mpm_prefork mpm_worker
-    quietly a2enmod -q mpm_event proxy_fcgi remoteip rewrite headers expires setenvif cgid suexec ssl
+    quietly a2enmod -q mpm_event proxy_fcgi remoteip rewrite headers expires setenvif cgid suexec ssl security2
     quietly a2enconf -q rayxo
+
+    # ModSecurity: the module (security2) loads the recommended base and the
+    # OWASP CRS from its own config; this adds RAYXO's engine-mode file last, so
+    # its SecRuleEngine wins. conf-enabled loads after mods-enabled, so this
+    # include comes after the CRS. Per-domain overrides live in each vhost.
+    cat >/etc/apache2/conf-available/rayxo-modsec.conf <<'CONF'
+# Managed by rayxo setup.sh: RAYXO's ModSecurity engine mode, written by the
+# agent (rayxod) from Server Settings, included after the OWASP Core Rule Set.
+<IfModule security2_module>
+    IncludeOptional /etc/rayxo/modsec/engine.conf
+</IfModule>
+CONF
+    quietly a2enconf -q rayxo-modsec
 
     {
         printf '# Managed by rayxo setup.sh: customer websites, one file per domain,\n'
@@ -3570,6 +3587,37 @@ configure_clamav() {
     systemctl disable --now clamav-daemon.service clamav-daemon.socket clamav-freshclam.service >/dev/null 2>&1 || true
 
     info "ClamAV terpasang; nyalakan dari Pengaturan Server saat dibutuhkan"
+}
+
+# configure_modsec sets ModSecurity up with the engine off by default, like
+# ClamAV. The module and the OWASP CRS are loaded (configure_web), but the
+# RAYXO engine file forces SecRuleEngine Off until the admin turns the WAF on
+# from the panel (the agent's waf.apply rewrites this file). The base config
+# comes from the package's recommended file, copied once, which also sets the
+# serial audit log and relevant-only auditing the per-domain logs rely on.
+#
+# Like configure_clamav, it must NOT reset the engine on an upgrade: the engine
+# file is only written when it is missing, so an admin-chosen mode survives.
+configure_modsec() {
+    step "Menyiapkan ModSecurity (WAF)"
+
+    if [[ ! -e /etc/modsecurity/modsecurity.conf && -e /etc/modsecurity/modsecurity.conf-recommended ]]; then
+        cp /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf
+    fi
+
+    install -d -m 0755 /etc/rayxo/modsec
+
+    if [[ ! -e /etc/rayxo/modsec/engine.conf ]]; then
+        cat >/etc/rayxo/modsec/engine.conf <<'CONF'
+# Written by rayxod; changes are overwritten.
+<IfModule security2_module>
+    SecRuleEngine Off
+</IfModule>
+CONF
+        info "ModSecurity terpasang; nyalakan dari Pengaturan Server saat dibutuhkan"
+    else
+        info "ModSecurity sudah diatur; mode yang dipilih dibiarkan"
+    fi
 }
 
 # configure_postgres keeps PostgreSQL listening on localhost only and makes
@@ -4096,6 +4144,7 @@ main() {
     configure_dns
     configure_mailboxes
     configure_webmail
+    configure_modsec
     configure_web
     configure_quota
     configure_logrotate

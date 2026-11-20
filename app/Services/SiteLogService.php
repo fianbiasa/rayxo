@@ -21,7 +21,7 @@ class SiteLogService
      * The logs a website has: Nginx's access and error log, and Apache's
      * error log, where PHP errors end up.
      */
-    public const KINDS = ['access', 'error', 'apache-error'];
+    public const KINDS = ['access', 'error', 'apache-error', 'modsec_audit'];
 
     /**
      * How many lines the page can show.

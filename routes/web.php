@@ -146,6 +146,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('domains/{domain}/mime-types', [DomainWebSettingsController::class, 'updateMimeTypes'])->name('domains.mime-types.update');
         Route::put('domains/{domain}/php-extensions', [DomainWebSettingsController::class, 'updatePhpExtensions'])->name('domains.php-extensions.update');
         Route::put('domains/{domain}/cgi', [DomainWebSettingsController::class, 'updateCgi'])->name('domains.cgi.update');
+        Route::put('domains/{domain}/modsecurity', [DomainWebSettingsController::class, 'updateModSecurity'])->name('domains.modsecurity.update');
         Route::put('domains/{domain}/limits', [DomainWebSettingsController::class, 'updateLimits'])->name('domains.limits.update');
         Route::post('domains/{domain}/node-app', [NodeAppController::class, 'store'])->name('domains.node-app.store');
         Route::put('domains/{domain}/node-app', [NodeAppController::class, 'update'])->name('domains.node-app.update');
@@ -422,6 +423,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('server-settings/clamav/scan', [ServerSettingController::class, 'scanClamav'])
             ->middleware('throttle:10,1,server-clamav-scan')
             ->name('server-settings.clamav-scan');
+        Route::put('server-settings/waf', [ServerSettingController::class, 'updateWaf'])
+            ->middleware('throttle:10,1,server-waf')
+            ->name('server-settings.waf');
         Route::put('server-settings/php-uploads', [ServerSettingController::class, 'updatePhpUploads'])
             ->middleware('throttle:10,1,server-uploads')
             ->name('server-settings.php-uploads');

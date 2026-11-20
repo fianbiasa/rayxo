@@ -269,7 +269,7 @@ func lookupGroup(name string) (int, error) {
 var rotatedSuffix = regexp.MustCompile(`^(\.[0-9]+(\.gz)?)?$`)
 
 // logKinds are the logs every domain has in LogDir.
-var logKinds = []string{"access.log", "error.log", "apache-error.log"}
+var logKinds = []string{"access.log", "error.log", "apache-error.log", "modsec_audit.log"}
 
 // removeLogs deletes the logs of domains, rotated ones included. Names are
 // matched exactly, so the logs of example.com never take those of

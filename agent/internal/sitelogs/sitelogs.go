@@ -48,6 +48,7 @@ var Kinds = map[string]string{
 	"access":       "access.log",
 	"error":        "error.log",
 	"apache-error": "apache-error.log",
+	"modsec_audit": "modsec_audit.log",
 }
 
 // ErrNoWebsite is returned for a domain the account has no website for.

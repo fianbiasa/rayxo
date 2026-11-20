@@ -76,6 +76,19 @@ func TestTailReturnsTheLastLinesOldestFirst(t *testing.T) {
 	}
 }
 
+func TestTailReadsTheModSecurityAuditLog(t *testing.T) {
+	f, logs := newFixture(t)
+	f.write(t, "example.com.modsec_audit.log", "ModSecurity: Access denied with code 403\n")
+
+	tail, err := logs.Tail("budi", "example.com", "modsec_audit", 10, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(tail.Lines, "|") != "ModSecurity: Access denied with code 403" {
+		t.Errorf("modsec_audit tail = %q", tail.Lines)
+	}
+}
+
 func TestTailOfALogNotWrittenYetIsEmpty(t *testing.T) {
 	_, logs := newFixture(t)
 

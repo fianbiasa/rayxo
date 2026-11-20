@@ -6,6 +6,7 @@ use App\Agent\AgentClient;
 use App\Agent\AgentException;
 use App\Enums\AccountStatus;
 use App\Enums\DomainStatus;
+use App\Enums\ModSecurityMode;
 use App\Models\Domain;
 use App\Models\ProtectedDirectory;
 use App\Models\ProtectedDirectoryUser;
@@ -346,6 +347,17 @@ class WebSettingsService
         }
 
         $this->update($website, 'cgi_enabled', $enabled, $enabled ? 'domain.cgi_enabled' : 'domain.cgi_disabled', $actor);
+    }
+
+    /**
+     * Set the website's ModSecurity (WAF) override, or let it inherit the
+     * server-wide default.
+     *
+     * @throws ValidationException
+     */
+    public function setModSecurity(Domain $website, ModSecurityMode $mode, User $actor): void
+    {
+        $this->update($website, 'modsecurity_mode', $mode, 'domain.modsecurity_changed', $actor);
     }
 
     /**

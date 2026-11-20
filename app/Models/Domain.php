@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\DomainStatus;
 use App\Enums\DomainType;
+use App\Enums\ModSecurityMode;
 use App\Enums\PointerMode;
 use App\Enums\SslSource;
 use App\Enums\SslStatus;
@@ -62,6 +63,7 @@ use Illuminate\Support\Carbon;
  * @property list<array{extension: string, type: string}>|null $mime_types Content types the website sets itself.
  * @property list<string>|null $php_extensions Extensions that also run as PHP.
  * @property bool $cgi_enabled Whether the scripts in cgi-bin run, while the package allows CGI.
+ * @property ModSecurityMode $modsecurity_mode The website's ModSecurity (WAF) override; a pointer follows its domain.
  * @property int|null $bandwidth_limit_mb The bandwidth the website may use in a calendar month.
  * @property int|null $disk_limit_mb The disk its folder may take.
  * @property int|null $disk_used_mb What its folder took when last measured, for a website with a disk limit.
@@ -100,6 +102,7 @@ class Domain extends Model
         'www_mode' => 'both',
         'php_enabled' => true,
         'cgi_enabled' => false,
+        'modsecurity_mode' => 'inherit',
     ];
 
     /**
@@ -128,6 +131,7 @@ class Domain extends Model
             'mime_types' => 'array',
             'php_extensions' => 'array',
             'cgi_enabled' => 'boolean',
+            'modsecurity_mode' => ModSecurityMode::class,
             'bandwidth_limit_mb' => 'integer',
             'disk_limit_mb' => 'integer',
             'disk_used_mb' => 'integer',
