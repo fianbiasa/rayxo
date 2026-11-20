@@ -1,0 +1,22 @@
+# Node.js app {{.Domain}} of account {{.User}}. Written by rayxod; changes are overwritten.
+[Unit]
+Description=Node.js app {{.Domain}} of {{.User}} (rayxo)
+After=network.target
+ConditionPathExists={{.EnvFile}}
+
+[Service]
+Type=simple
+User={{.User}}
+Group={{.User}}
+# Counts against the account's CPU and memory limits, like its PHP pools.
+Slice=rayxo-{{.User}}.slice
+WorkingDirectory={{.WorkDir}}
+# PORT, HOST and NODE_ENV plus the account's own variables; the agent writes it
+# 0600, owned by the account, so only the app's own user can read its secrets.
+EnvironmentFile={{.EnvFile}}
+ExecStart={{.NodeBinary}} {{.Entry}}
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

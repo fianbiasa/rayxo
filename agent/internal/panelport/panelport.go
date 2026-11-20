@@ -112,7 +112,7 @@ func New(cfg Config) *Manager {
 // Reserved reports whether port may not become the panel's: below 1024,
 // or used by another service of the server (MariaDB, Redis, Apache behind
 // Nginx on 8080 and 8444, PowerDNS's API, OpenDKIM, Rspamd, FTP's passive
-// ports).
+// ports, and the accounts' Node.js apps).
 func Reserved(port int) bool {
 	switch {
 	case port < 1024 || port > 65535:
@@ -122,6 +122,10 @@ func Reserved(port int) bool {
 	case port >= 11332 && port <= 11334:
 		return true
 	case port >= 35000 && port <= 35999:
+		return true
+	// The panel hands each account's Node.js app a port in this range; keep
+	// the panel itself out of it.
+	case port >= 40000 && port <= 49999:
 		return true
 	}
 

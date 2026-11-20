@@ -326,6 +326,19 @@ fail2ban-client get postfix-sasl journalmatch | grep -q "postfix@-.service" \
 echo "    fail2ban active; jails: $jails"
 ' || die "fail2ban is not set up as expected"
 
+# Node.js 22 LTS is installed for accounts' Node.js apps, and the http-level
+# WebSocket upgrade map the per-domain vhosts rely on is present.
+step "Node.js 22 is installed and the WebSocket upgrade map is present"
+as_root bash -c '
+set -e
+command -v node >/dev/null || { echo "node is not installed"; exit 1; }
+major=$(node --version | sed -E "s/^v([0-9]+).*/\1/")
+[ "$major" = "22" ] || { echo "expected Node.js 22, got $(node --version)"; exit 1; }
+grep -q "map \$http_upgrade \$connection_upgrade" /etc/nginx/conf.d/rayxo-sites.conf \
+    || { echo "the \$connection_upgrade map is missing from rayxo-sites.conf"; exit 1; }
+echo "    node $(node --version); connection_upgrade map present"
+' || die "Node.js is not set up as expected"
+
 # nftables is installed, but the managed firewall is off on a fresh install:
 # no inet rayxo table exists until the admin turns it on from the panel.
 step "nftables is installed and the managed firewall is off by default"

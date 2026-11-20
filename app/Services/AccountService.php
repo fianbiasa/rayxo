@@ -40,6 +40,7 @@ class AccountService
         private IpAddressService $ipAddresses,
         private TicketService $tickets,
         private RedisService $redis,
+        private NodeAppService $nodeApps,
     ) {}
 
     /**
@@ -341,9 +342,11 @@ class AccountService
 
             $this->dns->removeAccount($account, $actor);
             $this->mail->removeAccount($account, $actor);
-            // Stop and remove the account's Redis instance before the Linux
-            // user goes (both lock the account, so this runs first).
+            // Stop and remove the account's Redis instance and Node.js apps
+            // before the Linux user goes (all lock the account, so these run
+            // first).
             $this->redis->cleanup($account, $actor);
+            $this->nodeApps->cleanup($account, $actor);
             $this->tasks->dispatch('account.delete', ['username' => $account->username], $account, $actor);
 
             $this->audit->record('account.deleted', $account, ['username' => $account->username], $actor);

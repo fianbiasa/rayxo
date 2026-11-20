@@ -47,6 +47,7 @@ use App\Http\Controllers\MailDnsCheckController;
 use App\Http\Controllers\MailForwarderController;
 use App\Http\Controllers\MailModeController;
 use App\Http\Controllers\MailSslController;
+use App\Http\Controllers\NodeAppController;
 use App\Http\Controllers\PhpMyAdminController;
 use App\Http\Controllers\PointerController;
 use App\Http\Controllers\PostgresController;
@@ -146,6 +147,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('domains/{domain}/php-extensions', [DomainWebSettingsController::class, 'updatePhpExtensions'])->name('domains.php-extensions.update');
         Route::put('domains/{domain}/cgi', [DomainWebSettingsController::class, 'updateCgi'])->name('domains.cgi.update');
         Route::put('domains/{domain}/limits', [DomainWebSettingsController::class, 'updateLimits'])->name('domains.limits.update');
+        Route::post('domains/{domain}/node-app', [NodeAppController::class, 'store'])->name('domains.node-app.store');
+        Route::put('domains/{domain}/node-app', [NodeAppController::class, 'update'])->name('domains.node-app.update');
+        Route::delete('domains/{domain}/node-app', [NodeAppController::class, 'destroy'])->name('domains.node-app.destroy');
+        Route::post('domains/{domain}/node-app/restart', [NodeAppController::class, 'restart'])->middleware('throttle:10,1,node-app-restart')->name('domains.node-app.restart');
         Route::get('databases', [DatabaseController::class, 'index'])->name('databases.index');
         Route::post('databases', [DatabaseController::class, 'store'])->name('databases.store');
         Route::delete('databases/{database}', [DatabaseController::class, 'destroy'])->name('databases.destroy');

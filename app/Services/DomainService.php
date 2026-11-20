@@ -1087,6 +1087,22 @@ class DomainService
             }
         }
 
+        // A domain running a Node.js app is reverse-proxied straight to the
+        // app instead of to Apache/PHP; the agent then writes no PHP pool and
+        // no Apache vhost. An alias of such a domain proxies to the same app;
+        // a redirecting pointer serves nothing of its own.
+        $nodeAppHost = match (true) {
+            $domain->type === DomainType::Pointer => $domain->pointer_mode === PointerMode::Alias ? $domain->parent : null,
+            default => $domain,
+        };
+
+        $nodeApp = $nodeAppHost?->nodeApp;
+
+        if ($nodeApp !== null && $nodeApp->enabled && $domain->pointer_mode !== PointerMode::Redirect) {
+            $params['node_app'] = true;
+            $params['node_port'] = $nodeApp->port;
+        }
+
         // An account with addresses of its own is served there only.
         if ($account->ipv4Address !== null) {
             $params['ipv4'] = $account->ipv4Address->address;
@@ -1104,6 +1120,15 @@ class DomainService
      */
     private function dispatchRemove(Domain $domain, User $account, ?User $actor): void
     {
+        // Stop the domain's Node.js app (if any) before its vhost goes, so no
+        // request reaches a port that is about to be freed.
+        if ($domain->nodeApp()->exists()) {
+            $this->tasks->dispatch('nodeapp.deprovision', [
+                'username' => $account->username,
+                'domain' => $domain->name,
+            ], $account, $actor);
+        }
+
         $this->tasks->dispatch('web.remove_domain', [
             'username' => $account->username,
             'domain' => $domain->name,

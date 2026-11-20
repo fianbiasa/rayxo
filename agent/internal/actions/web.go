@@ -82,6 +82,10 @@ type applyDomainParams struct {
 	// on; empty means every address of the server.
 	IPv4 string `json:"ipv4"`
 	IPv6 string `json:"ipv6"`
+	// NodeApp serves the website by reverse-proxying to the account's Node.js
+	// app on NodePort instead of to Apache/PHP.
+	NodeApp  bool `json:"node_app"`
+	NodePort int  `json:"node_port"`
 }
 
 // protectedDirectoryParams are one protected directory of
@@ -198,6 +202,8 @@ func (p applyDomainParams) site(user sysuser.User) webserver.Site {
 		Suspended:            p.Suspended,
 		IPv4Address:          p.IPv4,
 		IPv6Address:          p.IPv6,
+		NodeApp:              p.NodeApp,
+		NodePort:             p.NodePort,
 	}
 }
 
