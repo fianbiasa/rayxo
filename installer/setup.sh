@@ -3739,7 +3739,26 @@ install_services() {
     quietly systemctl enable rayxod.service rayxo-queue.service rayxo-backup-queue.service rayxo-scheduler.timer
     # Don't cut a running backup short when restarting rayxod and the workers.
     wait_for_backups_idle
-    systemctl restart rayxod.service rayxo-queue.service rayxo-backup-queue.service
+    # Stop the workers before restarting the agent, so no queued task is sent to
+    # rayxod while it is restarting. During that overlap the old agent could
+    # still answer and write stale config (e.g. a Node.js app's vhost pointing
+    # at the old port). Bring the agent up, wait until it answers, then let the
+    # workers resume against the new agent.
+    quietly systemctl stop rayxo-queue.service rayxo-backup-queue.service
+    systemctl restart rayxod.service
+    local agent_ready=
+    local _i
+    for _i in $(seq 1 30); do
+        if "$INSTALL_DIR/bin/rayxo" ping >/dev/null 2>&1; then
+            agent_ready=1
+            break
+        fi
+        sleep 1
+    done
+    if [[ -z "$agent_ready" ]]; then
+        warn "agent rayxod belum merespons setelah restart; task antrean mungkin tertunda"
+    fi
+    systemctl start rayxo-queue.service rayxo-backup-queue.service
     systemctl start rayxo-scheduler.timer
     info "rayxod, queue worker, worker backup dan scheduler berjalan"
 }
