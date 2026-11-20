@@ -10,6 +10,7 @@ import {
     Cpu,
     FileCog,
     Database,
+    DatabaseBackup,
     DatabaseZap,
     FolderOpen,
     FolderUp,
@@ -36,6 +37,7 @@ import { dashboard } from '@/routes';
 import { index as backupsIndex } from '@/routes/backups';
 import { index as cronJobsIndex } from '@/routes/cron-jobs';
 import { index as databasesIndex } from '@/routes/databases';
+import { index as postgresIndex } from '@/routes/postgres';
 import { index as redisIndex } from '@/routes/redis';
 import { index as dnsIndex } from '@/routes/dns';
 import { index as accountsIndex } from '@/routes/admin/accounts';
@@ -271,6 +273,11 @@ export function useNavigation(): {
             href: redisIndex(),
             icon: DatabaseZap,
         };
+        const postgres: NavItem = {
+            title: 'PostgreSQL',
+            href: postgresIndex(),
+            icon: DatabaseBackup,
+        };
         const files: NavItem = {
             title: 'File Manager',
             href: filesIndex(),
@@ -312,6 +319,7 @@ export function useNavigation(): {
                 files,
                 databases,
                 redis,
+                postgres,
                 ftp,
                 ssh,
                 cronJobs,

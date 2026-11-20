@@ -303,6 +303,8 @@ step "fail2ban is running with the login jails"
 as_root bash -c '
 set -e
 systemctl is-active --quiet fail2ban || { echo "fail2ban is not active"; exit 1; }
+systemctl is-active --quiet postgresql || { echo "postgresql is not active"; exit 1; }
+sudo -u postgres psql -tAc "SHOW password_encryption" | grep -qx scram-sha-256 || { echo "postgresql is not using scram-sha-256"; exit 1; }
 jails=$(fail2ban-client status | sed -n "s/.*Jail list:[[:space:]]*//p")
 for jail in sshd dovecot postfix-sasl pure-ftpd rayxo-panel; do
     printf "%s" "$jails" | tr ", " "\n\n" | grep -qx "$jail" || { echo "jail $jail is not active (have: $jails)"; exit 1; }

@@ -138,6 +138,10 @@ class CollectUsageCommandTest extends TestCase
                 ->andThrow(new AgentException('Connection refused'));
             $mock->shouldReceive('call')
                 ->once()
+                ->with('pg.report', [], config('agent.timeout'))
+                ->andThrow(new AgentException('Connection refused'));
+            $mock->shouldReceive('call')
+                ->once()
                 ->with('mail.usage', [], config('agent.timeout'))
                 ->andThrow(new AgentException('Connection refused'));
         });
@@ -201,6 +205,10 @@ class CollectUsageCommandTest extends TestCase
                 ->once()
                 ->with('db.report', [], config('agent.timeout'))
                 ->andReturn(['databases' => $databases]);
+            $mock->shouldReceive('call')
+                ->once()
+                ->with('pg.report', [], config('agent.timeout'))
+                ->andReturn(['databases' => []]);
         });
     }
 

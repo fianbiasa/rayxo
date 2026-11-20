@@ -19,6 +19,7 @@ import (
 	"rayxo/agent/internal/mail"
 	"rayxo/agent/internal/mailqueue"
 	"rayxo/agent/internal/panelport"
+	"rayxo/agent/internal/postgres"
 	"rayxo/agent/internal/procmon"
 	"rayxo/agent/internal/quota"
 	"rayxo/agent/internal/reconfigure"
@@ -58,10 +59,11 @@ func Register(registry *rpc.Registry, config Config) {
 	web := webserver.New(webserver.DefaultConfig())
 	quotas := quota.New(quota.DefaultConfig())
 	databases := database.New(database.DefaultConfig())
+	postgresdbs := postgres.New(postgres.DefaultConfig())
 	jails := jail.New(jail.DefaultConfig())
 	limits := cgroup.New(cgroup.Config{UnitDir: "/etc/systemd/system", Root: "/sys/fs/cgroup", Run: runner.Run})
 
-	for name, method := range accountMethods(sysuser.System{}, web, quotas, databases, jails, limits) {
+	for name, method := range accountMethods(sysuser.System{}, web, quotas, databases, postgresdbs, jails, limits) {
 		registry.Register(name, method)
 	}
 
@@ -131,6 +133,10 @@ func Register(registry *rpc.Registry, config Config) {
 	}
 
 	for name, method := range redisMethods(sysuser.System{}, redis.New(redis.DefaultConfig())) {
+		registry.Register(name, method)
+	}
+
+	for name, method := range postgresMethods(sysuser.System{}, postgresdbs, transfers, helper) {
 		registry.Register(name, method)
 	}
 

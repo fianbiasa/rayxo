@@ -242,6 +242,26 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     }
 
     /**
+     * The PostgreSQL databases of this hosting account.
+     *
+     * @return HasMany<PostgresDatabase, $this>
+     */
+    public function postgresDatabases(): HasMany
+    {
+        return $this->hasMany(PostgresDatabase::class);
+    }
+
+    /**
+     * The PostgreSQL roles of this hosting account.
+     *
+     * @return HasMany<PostgresUser, $this>
+     */
+    public function postgresUsers(): HasMany
+    {
+        return $this->hasMany(PostgresUser::class);
+    }
+
+    /**
      * Where this account gets its alerts.
      *
      * @return HasMany<NotificationChannel, $this>

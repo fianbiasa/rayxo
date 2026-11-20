@@ -28,7 +28,7 @@ readonly DEFAULT_SITE_PHP_VERSIONS="7.4 8.0 8.1 8.2 8.3 8.4 8.5"
 # How many release trees to keep under releases/ (the active one and one
 # previous); older trees are removed after a successful install (prune_releases).
 readonly RELEASES_KEEP=2
-readonly SITE_PHP_PACKAGES="fpm cli common mysql sqlite3 mbstring xml curl intl zip bcmath opcache readline gd imagick soap redis"
+readonly SITE_PHP_PACKAGES="fpm cli common mysql pgsql sqlite3 mbstring xml curl intl zip bcmath opcache readline gd imagick soap redis"
 readonly PANEL_USER="rayxo"
 # The panel's port: 2222 unless chosen otherwise (--panel-port, or from the
 # panel), remembered in PANEL_PORT_FILE for later runs.
@@ -1222,11 +1222,16 @@ DEBCONF
     quietly "${apt[@]}" install clamav clamav-daemon clamav-freshclam
     remove_policy_rc
 
+    # PostgreSQL: a second database engine for apps that need it. Unlike
+    # ClamAV it runs by default (apps connect over localhost); configure_postgres
+    # keeps it on 127.0.0.1 only and uses SCRAM for the account roles.
+    quietly "${apt[@]}" install postgresql postgresql-contrib
+
     # GoAccess makes the visitor reports of websites (the agent's stats.report).
     quietly "${apt[@]}" install --no-install-recommends goaccess
 
     # cron runs the cron jobs of hosting accounts (the agent writes their crontabs).
-    quietly systemctl enable --now mariadb nginx cron "php$PHP_VERSION-fpm"
+    quietly systemctl enable --now mariadb postgresql nginx cron "php$PHP_VERSION-fpm"
     info "Nginx, Apache, MariaDB, Postfix, Dovecot, Rspamd, Pure-FTPd, PowerDNS dan PHP $PHP_VERSION terpasang"
 }
 
@@ -3476,6 +3481,45 @@ configure_clamav() {
     info "ClamAV terpasang; nyalakan dari Pengaturan Server saat dibutuhkan"
 }
 
+# configure_postgres keeps PostgreSQL listening on localhost only and makes
+# account roles authenticate with SCRAM, so a website on this server reaches
+# its own databases over 127.0.0.1 with a password while nothing outside can.
+# The agent (running psql as the postgres superuser over the local socket)
+# creates the per-account roles and databases.
+configure_postgres() {
+    step "Menyiapkan PostgreSQL (localhost saja, SCRAM)"
+
+    local conf_dir
+    conf_dir="$(ls -d /etc/postgresql/*/main 2>/dev/null | sort -V | tail -1)"
+    if [[ -z "$conf_dir" ]]; then
+        info "PostgreSQL belum ter-cluster; lewati"
+
+        return
+    fi
+
+    mkdir -p "$conf_dir/conf.d"
+    cat >"$conf_dir/conf.d/rayxo.conf" <<'CONF'
+# Written by setup.sh; changes are overwritten.
+listen_addresses = 'localhost'
+password_encryption = scram-sha-256
+CONF
+
+    local hba="$conf_dir/pg_hba.conf"
+    if ! grep -q '# BEGIN RAYXO' "$hba" 2>/dev/null; then
+        cat >>"$hba" <<'HBA'
+
+# BEGIN RAYXO: account apps on this server connect with a password over SCRAM.
+host    all             all             127.0.0.1/32            scram-sha-256
+host    all             all             ::1/128                 scram-sha-256
+# END RAYXO
+HBA
+    fi
+
+    quietly systemctl restart postgresql
+
+    info "PostgreSQL siap di 127.0.0.1:5432; buat database dari halaman PostgreSQL"
+}
+
 configure_cron_slices() {
     local file=/etc/pam.d/cron
 
@@ -3967,6 +4011,7 @@ main() {
     configure_cron_slices
     configure_fail2ban
     configure_clamav
+    configure_postgres
     install_services
     verify_install
     if [[ -n "$restore_file" ]]; then

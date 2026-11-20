@@ -76,7 +76,7 @@ func TestAccountMethodsLockTheAccount(t *testing.T) {
 	params := map[string]string{"account.set_quota": `{"username":"budi","disk_mb":1024,"inodes":0}`}
 
 	system := newFakeSystem()
-	for name, method := range accountMethods(system, system, system.quotaManager(), system.databases(), system, system.limits()) {
+	for name, method := range accountMethods(system, system, system.quotaManager(), system.databases(), system.postgres(), system, system.limits()) {
 		if name == "quota.report" {
 			if method.LockKey != nil {
 				t.Fatal("quota.report only reads, but locks")
@@ -219,7 +219,7 @@ func TestSuspendLocksTheAccount(t *testing.T) {
 		t.Fatalf("unexpected result %s", result)
 	}
 
-	assertCalls(t, system, "lookup budi", "lock budi", "shell budi /usr/sbin/nologin", "web suspend budi", "kill 1001", "db lock budi")
+	assertCalls(t, system, "lookup budi", "lock budi", "shell budi /usr/sbin/nologin", "web suspend budi", "kill 1001", "db lock budi", "pg lock budi")
 }
 
 func TestUnsuspendUnlocksTheAccount(t *testing.T) {
@@ -235,7 +235,7 @@ func TestUnsuspendUnlocksTheAccount(t *testing.T) {
 		t.Fatalf("unexpected result %s", result)
 	}
 
-	assertCalls(t, system, "lookup budi", "unlock budi", "web unsuspend budi", "db unlock budi")
+	assertCalls(t, system, "lookup budi", "unlock budi", "web unsuspend budi", "db unlock budi", "pg unlock budi")
 }
 
 func TestSuspendAndUnsuspendNeedAnExistingAccount(t *testing.T) {
@@ -264,7 +264,7 @@ func TestDeleteRemovesWebsitesKillsProcessesThenRemovesTheAccount(t *testing.T) 
 		t.Fatalf("unexpected result %s", result)
 	}
 
-	assertCalls(t, system, "lookup budi", "web remove budi", "db remove budi", "unlimit budi 1001", "kill 1001",
+	assertCalls(t, system, "lookup budi", "web remove budi", "db remove budi", "pg remove budi", "unlimit budi 1001", "kill 1001",
 		"quotaon -p -u /", "setquota -u -- budi 0 0 0 0 /", "crontab remove budi", "userdel budi")
 
 	if _, exists := system.users["budi"]; exists {
@@ -286,7 +286,7 @@ func TestDeleteOfAMissingAccountSucceeds(t *testing.T) {
 
 	// Web configuration and databases left behind by the account are still
 	// removed.
-	assertCalls(t, system, "lookup budi", "web remove budi", "db remove budi", "unlimit budi 0")
+	assertCalls(t, system, "lookup budi", "web remove budi", "db remove budi", "pg remove budi", "unlimit budi 0")
 }
 
 func TestWebFailuresOfAccountMethodsAreReadable(t *testing.T) {
@@ -386,6 +386,8 @@ func callAccount(t *testing.T, system accountSystem, method string, params any) 
 
 	var databases accountDatabases = unreachableDatabases{t}
 
+	var postgres accountDatabases = unreachableDatabases{t}
+
 	var jails accountJails = jail.New(jail.Config{Root: t.TempDir()})
 
 	var limits accountLimits = unreachableLimits{t}
@@ -393,11 +395,12 @@ func callAccount(t *testing.T, system accountSystem, method string, params any) 
 	if fake, ok := system.(*fakeSystem); ok {
 		quotas = fake.quotaManager()
 		databases = fake.databases()
+		postgres = fake.postgres()
 		jails = fake
 		limits = fake.limits()
 	}
 
-	registered, ok := accountMethods(system, web, quotas, databases, jails, limits)[method]
+	registered, ok := accountMethods(system, web, quotas, databases, postgres, jails, limits)[method]
 	if !ok {
 		t.Fatalf("unknown method %s", method)
 	}
@@ -805,6 +808,28 @@ func (u unreachableDatabases) LockAccount(_ context.Context, user string, _ bool
 	u.t.Errorf("MariaDB was reached for %s", user)
 
 	return errors.New("unreachable")
+}
+
+// fakePostgres records the account methods' calls to PostgreSQL with the
+// other calls of its system, like fakeDatabases but with its own words.
+type fakePostgres struct {
+	f *fakeSystem
+}
+
+func (f *fakeSystem) postgres() fakePostgres {
+	return fakePostgres{f: f}
+}
+
+func (d fakePostgres) RemoveAccount(_ context.Context, user string) error {
+	return d.f.record("pg remove %s", user)
+}
+
+func (d fakePostgres) LockAccount(_ context.Context, user string, lock bool) error {
+	if lock {
+		return d.f.record("pg lock %s", user)
+	}
+
+	return d.f.record("pg unlock %s", user)
 }
 
 // unreachableWeb fails the test when an account method gets as far as the
