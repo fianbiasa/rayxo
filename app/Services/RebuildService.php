@@ -23,16 +23,21 @@ class RebuildService
         private MailService $mail,
         private MailRulesService $mailRules,
         private MailSendLimitService $sendLimits,
+        private NodeAppService $nodeApps,
     ) {}
 
     /**
      * Queue the whole rebuild; the queue worker and the agent do the rest.
      *
-     * @return array{websites: int, quotas: int, crontabs: int, ftp_folders: int, dns_zones: int, mail_domains: int}
+     * @return array{node_apps: int, websites: int, quotas: int, crontabs: int, ftp_folders: int, dns_zones: int, mail_domains: int}
      */
     public function queueAll(?User $actor = null): array
     {
         $this->phpVersions->forget();
+
+        // Node.js apps first, so each app's unit is re-rendered and its socket
+        // recreated before the website rebuild re-points Nginx at that socket.
+        $nodeApps = $this->nodeApps->reapplyAll($actor);
 
         // Mailbox filters and automatic replies follow their mail domains.
         $mailDomains = $this->mail->reapplyAll($actor);
@@ -40,6 +45,7 @@ class RebuildService
         $this->sendLimits->sync($actor, force: true);
 
         return [
+            'node_apps' => $nodeApps,
             'websites' => $this->domains->reapplyAll($actor),
             'quotas' => $this->quotas->applyAll($actor),
             'crontabs' => $this->cronJobs->reapplyAll($actor),

@@ -212,6 +212,32 @@ class NodeAppService
     }
 
     /**
+     * Re-provision every enabled Node.js app, so a full rebuild (e.g. after an
+     * upgrade) re-renders each app's systemd unit and recreates its socket. The
+     * website rebuild re-points Nginx at the socket, so without this the socket
+     * would be missing after an upgrade that changed how apps are served.
+     */
+    public function reapplyAll(?User $actor = null): int
+    {
+        $queued = 0;
+
+        Domain::query()
+            ->whereHas('nodeApp', fn ($query) => $query->where('enabled', true))
+            ->with(['nodeApp', 'account'])
+            ->orderBy('id')
+            ->each(function (Domain $domain) use ($actor, &$queued): void {
+                $app = $domain->nodeApp;
+
+                if ($app !== null && $app->enabled) {
+                    $this->dispatchProvision($domain, $app, $actor);
+                    $queued++;
+                }
+            });
+
+        return $queued;
+    }
+
+    /**
      * A port in NodeApp's range that no other app holds. Call inside a
      * transaction that locked the node_apps rows.
      */
