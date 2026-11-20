@@ -7,6 +7,7 @@ use App\Enums\DatabaseStatus;
 use App\Enums\Role;
 use App\Models\Database;
 use App\Models\Domain;
+use App\Models\PostgresDatabase;
 use App\Models\User;
 use App\Services\FileManagerService;
 
@@ -39,6 +40,7 @@ final class FakeAgentClient implements AgentClient
             'account.set_quota' => ['applied' => true, 'simulated' => true],
             'quota.report' => $this->quotaReport(),
             'db.report' => $this->databaseReport(),
+            'pg.report' => $this->postgresReport(),
             'ftp.ensure_dir' => $this->ftpFolder((string) ($params['username'] ?? '')),
             'php.versions' => ['versions' => ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'], 'simulated' => true],
             'php.ioncube' => ($params['enabled'] ?? false) === true
@@ -385,6 +387,18 @@ final class FakeAgentClient implements AgentClient
     private function databaseReport(): array
     {
         $databases = Database::query()
+            ->where('status', '!=', DatabaseStatus::Pending)
+            ->orderBy('name')
+            ->pluck('name')
+            ->map(fn (string $name): array => ['name' => $name, 'size_bytes' => 16_384 + crc32($name) % 50_000_000])
+            ->all();
+
+        return ['databases' => $databases, 'simulated' => true];
+    }
+
+    private function postgresReport(): array
+    {
+        $databases = PostgresDatabase::query()
             ->where('status', '!=', DatabaseStatus::Pending)
             ->orderBy('name')
             ->pluck('name')

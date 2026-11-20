@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Agent\AgentException;
 use App\Services\DatabaseService;
 use App\Services\MailUsageService;
+use App\Services\PostgresService;
 use App\Services\QuotaService;
 use Illuminate\Console\Command;
 
@@ -26,7 +27,7 @@ class CollectUsageCommand extends Command
      */
     protected $description = 'Read the disk usage of every hosting account from the server agent';
 
-    public function handle(QuotaService $quotas, DatabaseService $databases, MailUsageService $mailUsage): int
+    public function handle(QuotaService $quotas, DatabaseService $databases, PostgresService $postgres, MailUsageService $mailUsage): int
     {
         // Database sizes are measured apart from the disk quotas, so one
         // failing does not stop the other.
@@ -37,6 +38,15 @@ class CollectUsageCommand extends Command
             report($exception);
 
             $this->components->error('The server agent could not report database sizes: '.$exception->getMessage());
+        }
+
+        try {
+            $pgSizes = $postgres->collectSizes();
+            $this->components->info($pgSizes === 1 ? 'Size of 1 PostgreSQL database stored.' : "Size of {$pgSizes} PostgreSQL databases stored.");
+        } catch (AgentException $exception) {
+            report($exception);
+
+            $this->components->error('The server agent could not report PostgreSQL database sizes: '.$exception->getMessage());
         }
 
         try {

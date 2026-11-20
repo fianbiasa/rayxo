@@ -134,6 +134,7 @@ type accountActions struct {
 	web       accountWeb
 	quotas    accountQuota
 	databases accountDatabases
+	postgres  accountDatabases
 	jails     accountJails
 	limits    accountLimits
 }
@@ -141,8 +142,8 @@ type accountActions struct {
 // accountMethods returns the account.* and quota.* methods by name. Calls
 // for the same username run one at a time; quota.report only reads and
 // locks nothing.
-func accountMethods(system accountSystem, web accountWeb, quotas accountQuota, databases accountDatabases, jails accountJails, limits accountLimits) map[string]rpc.Method {
-	accounts := accountActions{system: system, web: web, quotas: quotas, databases: databases, jails: jails, limits: limits}
+func accountMethods(system accountSystem, web accountWeb, quotas accountQuota, databases, postgres accountDatabases, jails accountJails, limits accountLimits) map[string]rpc.Method {
+	accounts := accountActions{system: system, web: web, quotas: quotas, databases: databases, postgres: postgres, jails: jails, limits: limits}
 
 	return map[string]rpc.Method{
 		"account.create":       {Handler: accounts.create, LockKey: accountLockKey},
@@ -286,6 +287,10 @@ func (a accountActions) suspend(ctx context.Context, raw json.RawMessage) (any, 
 		return nil, databaseError(err, "lock the database users of "+user.Name)
 	}
 
+	if err := a.postgres.LockAccount(ctx, user.Name, true); err != nil {
+		return nil, postgresError(err, "lock the PostgreSQL roles of "+user.Name)
+	}
+
 	return struct{}{}, nil
 }
 
@@ -307,6 +312,10 @@ func (a accountActions) unsuspend(ctx context.Context, raw json.RawMessage) (any
 
 	if err := a.databases.LockAccount(ctx, user.Name, false); err != nil {
 		return nil, databaseError(err, "unlock the database users of "+user.Name)
+	}
+
+	if err := a.postgres.LockAccount(ctx, user.Name, false); err != nil {
+		return nil, postgresError(err, "unlock the PostgreSQL roles of "+user.Name)
 	}
 
 	return struct{}{}, nil
@@ -339,6 +348,10 @@ func (a accountActions) remove(ctx context.Context, raw json.RawMessage) (any, e
 	// inherit.
 	if err := a.databases.RemoveAccount(ctx, params.Username); err != nil {
 		return nil, databaseError(err, "delete the databases of "+params.Username)
+	}
+
+	if err := a.postgres.RemoveAccount(ctx, params.Username); err != nil {
+		return nil, postgresError(err, "delete the PostgreSQL databases of "+params.Username)
 	}
 
 	// The SSH jail goes before the user: removing it ends the account's

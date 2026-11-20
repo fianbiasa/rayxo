@@ -30,6 +30,7 @@ class ServerRestoreService
     public function __construct(
         private TaskDispatcher $tasks,
         private DatabaseService $databases,
+        private PostgresService $postgres,
         private RebuildService $rebuild,
         private SshService $ssh,
     ) {}
@@ -74,6 +75,7 @@ class ServerRestoreService
         );
 
         $databases = $this->databases->reapplyAll();
+        $this->postgres->reapplyAll();
         $rebuilt = $this->rebuild->queueAll();
         $this->ssh->reapply(User::query(), null);
 

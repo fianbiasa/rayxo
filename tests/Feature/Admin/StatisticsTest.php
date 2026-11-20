@@ -119,6 +119,7 @@ class StatisticsTest extends TestCase
         $this->mock(AgentClient::class, function (MockInterface $mock) {
             $mock->shouldReceive('call')->with('mail.usage', [], config('agent.timeout'))->andReturn(['mailboxes' => []]);
             $mock->shouldReceive('call')->with('db.report', [], config('agent.timeout'))->andReturn(['databases' => []]);
+            $mock->shouldReceive('call')->with('pg.report', [], config('agent.timeout'))->andReturn(['databases' => []]);
             $mock->shouldReceive('call')->with('quota.report', [], config('agent.timeout'))->andReturn([
                 'enabled' => true,
                 'filesystem' => '/',
