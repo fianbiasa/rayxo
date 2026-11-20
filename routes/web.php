@@ -450,6 +450,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('services/rebuild', [ServiceController::class, 'rebuild'])
             ->middleware('throttle:6,1')
             ->name('services.rebuild');
+        Route::post('services/drift/scan', [ServiceController::class, 'scan'])
+            ->middleware('throttle:6,1,drift-scan')
+            ->name('services.drift.scan');
+        Route::post('services/drift/{configDrift}/rewrite', [ServiceController::class, 'rewrite'])
+            ->middleware('throttle:30,1,drift-rewrite')
+            ->name('services.drift.rewrite');
         Route::post('services/{unit}/{action}', [ServiceController::class, 'act'])
             ->where('unit', '[a-z0-9][a-z0-9@._-]{0,99}\.service')
             ->whereIn('action', ['start', 'stop', 'restart', 'reload'])

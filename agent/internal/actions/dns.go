@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"rayxo/agent/internal/dns"
+	"rayxo/agent/internal/drift"
 	"rayxo/agent/internal/rpc"
 	"rayxo/agent/internal/validate"
 )
@@ -13,6 +14,7 @@ import (
 // dns.Manager implements it.
 type dnsServer interface {
 	Sync(ctx context.Context, zone dns.Zone) error
+	CheckZone(ctx context.Context, zone dns.Zone) (drift.Report, error)
 	Delete(ctx context.Context, name string) error
 }
 
@@ -60,8 +62,25 @@ func dnsMethods(server dnsServer) map[string]rpc.Method {
 
 	return map[string]rpc.Method{
 		"dns.sync_zone":   {Handler: actions.syncZone, LockKey: webLockKey[syncZoneParams]},
+		"dns.check_zone":  {Handler: actions.checkZone, LockKey: webLockKey[syncZoneParams]},
 		"dns.delete_zone": {Handler: actions.deleteZone, LockKey: webLockKey[deleteZoneParams]},
 	}
+}
+
+// checkZone implements dns.check_zone: report whether PowerDNS differs from the
+// given zone, without changing it.
+func (d dnsActions) checkZone(ctx context.Context, raw json.RawMessage) (any, error) {
+	params, err := decodeWebParams[syncZoneParams](raw)
+	if err != nil {
+		return nil, err
+	}
+
+	report, err := d.server.CheckZone(ctx, params.zone())
+	if err != nil {
+		return nil, rpc.Errorf(rpc.CodeActionFailed, "%v", err)
+	}
+
+	return report, nil
 }
 
 // syncZone implements dns.sync_zone: PowerDNS ends up holding exactly the

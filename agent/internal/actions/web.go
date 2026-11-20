@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"rayxo/agent/internal/drift"
 	"rayxo/agent/internal/rpc"
 	"rayxo/agent/internal/sysuser"
 	"rayxo/agent/internal/validate"
@@ -22,6 +23,7 @@ type webServer interface {
 	HasLoginDomain(domain string) bool
 	UsedByOtherAccount(domain, user string) (bool, error)
 	ApplyDomain(ctx context.Context, site webserver.Site) (documentRoot string, err error)
+	CheckDomain(site webserver.Site) (drift.Report, error)
 	RemoveDomain(ctx context.Context, user, domain string) error
 	RemovePool(ctx context.Context, user, version string) error
 	IssueCertificate(ctx context.Context, user, domain string) (webserver.Certificate, error)
@@ -273,6 +275,7 @@ func webMethods(system accountSystem, web webServer) map[string]rpc.Method {
 
 	return map[string]rpc.Method{
 		"web.apply_domain":  {Handler: actions.applyDomain, LockKey: webLockKey[applyDomainParams]},
+		"web.check_domain":  {Handler: actions.checkDomainDrift, LockKey: webLockKey[applyDomainParams]},
 		"web.remove_domain": {Handler: actions.removeDomain, LockKey: webLockKey[domainParams]},
 		"php.remove_pool":   {Handler: actions.removePool, LockKey: webLockKey[removePoolParams]},
 		"php.versions":      {Handler: actions.phpVersions},
@@ -339,6 +342,27 @@ func (w webActions) applyDomain(ctx context.Context, raw json.RawMessage) (any, 
 	}
 
 	return domainInfo{Domain: params.Domain, DocumentRoot: documentRoot}, nil
+}
+
+// checkDomainDrift implements web.check_domain: it renders the domain's vhosts
+// and pool section and reports where the files on disk differ, without writing.
+func (w webActions) checkDomainDrift(ctx context.Context, raw json.RawMessage) (any, error) {
+	params, err := decodeWebParams[applyDomainParams](raw)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := w.checkDomain(ctx, params.Username, params.Domain)
+	if err != nil {
+		return nil, err
+	}
+
+	report, err := w.web.CheckDomain(params.site(user))
+	if err != nil {
+		return nil, webError(err, params.Domain)
+	}
+
+	return report, nil
 }
 
 // removeDomain implements web.remove_domain: it removes the domain's Nginx

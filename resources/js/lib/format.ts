@@ -78,6 +78,8 @@ export const auditActionLabels: Record<string, string> = {
     'service.restart': 'Service di-restart',
     'service.reload': 'Service di-reload',
     'server.rebuilt': 'Konfigurasi server ditulis ulang',
+    'server.drift_scanned': 'Cek config drift dijalankan',
+    'server.drift_rewritten': 'Config drift ditulis ulang',
     'domain.www_changed': 'Alamat www diubah',
     'domain.php_enabled': 'PHP dinyalakan',
     'domain.php_disabled': 'PHP dimatikan',

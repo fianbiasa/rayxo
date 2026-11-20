@@ -202,6 +202,7 @@ func TestWebMethodsAreRegistered(t *testing.T) {
 func TestWebMethodsLockTheAccount(t *testing.T) {
 	params := map[string]string{
 		"web.apply_domain":  `{"username":"budi","domain":"example.com","php_version":"8.4"}`,
+		"web.check_domain":  `{"username":"budi","domain":"example.com","php_version":"8.4"}`,
 		"web.remove_domain": `{"username":"budi","domain":"example.com"}`,
 		"php.remove_pool":   `{"username":"budi","php_version":"8.4"}`,
 		"ssl.issue":         `{"username":"budi","domain":"example.com"}`,

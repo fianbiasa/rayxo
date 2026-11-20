@@ -32,6 +32,9 @@ final class NotificationEvents
     /** A newer RAYXO release is available to update to. */
     public const UPDATE_AVAILABLE = 'update_available';
 
+    /** Server config drifted from what RAYXO would write. */
+    public const CONFIG_DRIFTED = 'config_drifted';
+
     /**
      * @var array<string, list<Role>>
      */
@@ -43,6 +46,7 @@ final class NotificationEvents
         self::TICKET => [Role::Admin, Role::Reseller, Role::User],
         self::BACKUP => [Role::Admin],
         self::UPDATE_AVAILABLE => [Role::Admin],
+        self::CONFIG_DRIFTED => [Role::Admin],
     ];
 
     /**

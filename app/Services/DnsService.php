@@ -717,6 +717,31 @@ class DnsService
     }
 
     /**
+     * Queue a drift check of every zone in PowerDNS against the panel's
+     * records, for the config-drift scan. Unlike syncAll it creates nothing
+     * (a scan must not write), so it only checks zones that already exist.
+     */
+    public function checkAll(?User $actor = null): int
+    {
+        $accounts = User::query()
+            ->where('role', Role::User)
+            ->whereIn('status', [AccountStatus::Active, AccountStatus::Suspended]);
+
+        $queued = 0;
+
+        DnsZone::query()
+            ->with('account')
+            ->whereIn('user_id', $accounts->clone()->select('id'))
+            ->orderBy('id')
+            ->each(function (DnsZone $zone) use ($actor, &$queued): void {
+                $this->sync($zone, $actor, 'dns.check_zone');
+                $queued++;
+            });
+
+        return $queued;
+    }
+
+    /**
      * The records mail apps find their settings with: autoconfig.<domain>
      * (Thunderbird) and autodiscover.<domain> at this server, and
      * _autodiscover._tcp sending Outlook to the server hostname, whose
@@ -922,11 +947,11 @@ class DnsService
     /**
      * Queue the zone, with all its records, for the agent.
      */
-    private function sync(DnsZone $zone, ?User $actor): void
+    private function sync(DnsZone $zone, ?User $actor, string $action = 'dns.sync_zone'): void
     {
         $account = $zone->account;
 
-        $this->tasks->dispatch('dns.sync_zone', [
+        $this->tasks->dispatch($action, [
             'username' => $account->username,
             'zone' => $zone->name,
             'nameservers' => $this->nameserversFor($account),
