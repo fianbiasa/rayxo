@@ -164,3 +164,67 @@ func TestValidatePassword(t *testing.T) {
 		}
 	}
 }
+
+func TestImportConnectsAsOwningRoleNotSuperuser(t *testing.T) {
+	var gotRole, gotPassword string
+	rec := &recorder{responses: map[string]string{"FROM pg_database d JOIN pg_roles r": "budi_shop"}}
+	m := New(Config{
+		Run: rec.run,
+		Import: func(_ context.Context, _ Identity, _, role, password, _ string) error {
+			gotRole, gotPassword = role, password
+
+			return nil
+		},
+	})
+
+	home := t.TempDir()
+	owners := map[string]string{"budi_shop": "Abcd1234Efgh5678"}
+
+	if err := m.Import(context.Background(), Identity{Home: home}, "budi", "budi_shop", home+"/dump.sql", owners); err != nil {
+		t.Fatal(err)
+	}
+
+	if gotRole != "budi_shop" {
+		t.Errorf("import must connect as the owning account role, got %q", gotRole)
+	}
+
+	if gotPassword != "Abcd1234Efgh5678" {
+		t.Errorf("import must use the owning role's password, got %q", gotPassword)
+	}
+
+	if strings.Contains(rec.joined(), "SET ROLE") {
+		t.Error("import must not run with a superuser SET ROLE preamble")
+	}
+}
+
+func TestImportRefusesWhenNoAccountRoleOwnsTheDatabase(t *testing.T) {
+	// datdba resolves to postgres, not an account role, so there is no role to
+	// import as.
+	rec := &recorder{responses: map[string]string{"FROM pg_database d JOIN pg_roles r": "postgres"}}
+	called := false
+	m := New(Config{Run: rec.run, Import: func(context.Context, Identity, string, string, string, string) error { called = true; return nil }})
+
+	home := t.TempDir()
+	if err := m.Import(context.Background(), Identity{Home: home}, "budi", "budi_shop", home+"/dump.sql", nil); err == nil {
+		t.Fatal("import must be refused when no account role owns the database")
+	}
+
+	if called {
+		t.Error("import must not run when there is no owning account role")
+	}
+}
+
+func TestImportRefusesWhenOwnerPasswordMissing(t *testing.T) {
+	rec := &recorder{responses: map[string]string{"FROM pg_database d JOIN pg_roles r": "budi_shop"}}
+	called := false
+	m := New(Config{Run: rec.run, Import: func(context.Context, Identity, string, string, string, string) error { called = true; return nil }})
+
+	home := t.TempDir()
+	if err := m.Import(context.Background(), Identity{Home: home}, "budi", "budi_shop", home+"/dump.sql", map[string]string{}); err == nil {
+		t.Fatal("import must be refused when the owning role's password is not supplied")
+	}
+
+	if called {
+		t.Error("import must not run without the owning role's password")
+	}
+}

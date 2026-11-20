@@ -269,13 +269,22 @@ class PostgresService
 
         $account = $database->account;
 
-        DB::transaction(function () use ($database, $path, $remove, $account, $actor): void {
+        $owners = $database->users()->get()
+            ->map(fn (PostgresUser $user): array => ['name' => $user->name, 'password' => $user->password])
+            ->all();
+
+        if ($owners === []) {
+            throw ValidationException::withMessages(['file' => __('Give this database a user before importing into it.')]);
+        }
+
+        DB::transaction(function () use ($database, $path, $remove, $account, $owners, $actor): void {
             $database->forceFill(['import_status' => 'running', 'import_error' => null])->save();
 
             $this->tasks->dispatch('pg.import', [
                 'username' => $account->username,
                 'database' => $database->name,
                 'path' => $path,
+                'owners' => $owners,
                 'remove' => $remove,
             ], $account, $actor);
 

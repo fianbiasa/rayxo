@@ -139,7 +139,7 @@ func systemMethods(certificates hostnameCertificates, serverTime serverClock, ch
 			}
 
 			return updateParams{Version: params.Version, SetupURL: params.SetupURL}, nil
-		}},
+		}, LockKey: func(json.RawMessage) (string, error) { return "update", nil }},
 		"panel.port_trial": {Handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
 			var params portParams
 			if err := rpc.DecodeParams(raw, &params); err != nil {

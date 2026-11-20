@@ -101,6 +101,12 @@ func validateNodeEntry(entry string) error {
 		return fmt.Errorf("entry must be a single path")
 	}
 
+	// No whitespace and no leading "-", so the entry is one argument to node
+	// and cannot smuggle extra node options (e.g. "-e <code>") into ExecStart.
+	if strings.ContainsAny(entry, " \t") || strings.HasPrefix(entry, "-") {
+		return fmt.Errorf("entry must be a single path with no spaces or leading dash")
+	}
+
 	if filepath.IsAbs(entry) {
 		return fmt.Errorf("entry must be relative to the app directory")
 	}

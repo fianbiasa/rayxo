@@ -1252,8 +1252,10 @@ DEBCONF
 
     # rclone copies backups to FTP, SFTP or S3 destinations; ssh-keyscan
     # (openssh-client) reads an SFTP server's host key for the admin to accept.
+    # git lets an account push and pull its site to GitHub and the like from the
+    # SSH terminal (accounts run in a jail with only the tools installed here).
     quietly "${apt[@]}" install nginx mariadb-server postfix opendkim opendkim-tools certbot python3 quota cron zstd \
-        rclone openssh-client \
+        rclone openssh-client git \
         "php$PHP_VERSION-fpm" "php$PHP_VERSION-cli" "php$PHP_VERSION-common" "php$PHP_VERSION-mysql" \
         "php$PHP_VERSION-mbstring" "php$PHP_VERSION-xml" "php$PHP_VERSION-curl" "php$PHP_VERSION-intl" \
         "php$PHP_VERSION-zip" "php$PHP_VERSION-bcmath" "php$PHP_VERSION-opcache" "php$PHP_VERSION-readline" \
@@ -3655,6 +3657,21 @@ HBA
     fi
 
     quietly systemctl restart postgresql
+
+    # Account roles (NOSUPERUSER) could otherwise connect to the maintenance
+    # databases and read every tenant's database and role names from the
+    # catalogs there. Deny PUBLIC that connection; the postgres superuser the
+    # agent uses bypasses it, and each account database already refuses PUBLIC.
+    # Also drop PUBLIC's create right on template1's public schema so databases
+    # cloned from it are not world-writable on PostgreSQL before 15. Idempotent.
+    if ! runuser -u postgres -- psql -v ON_ERROR_STOP=1 --no-psqlrc -qtA >>"$INSTALL_LOG" 2>&1 <<'SQL'; then
+REVOKE CONNECT ON DATABASE postgres FROM PUBLIC;
+REVOKE CONNECT ON DATABASE template1 FROM PUBLIC;
+\connect template1
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+SQL
+        warn "tidak bisa mengunci database maintenance PostgreSQL dari PUBLIC"
+    fi
 
     info "PostgreSQL siap di 127.0.0.1:5432; buat database dari halaman PostgreSQL"
 }

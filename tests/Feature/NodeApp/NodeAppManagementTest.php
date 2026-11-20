@@ -111,6 +111,23 @@ class NodeAppManagementTest extends TestCase
         $this->assertDatabaseCount('node_apps', 0);
     }
 
+    public function test_enabling_rejects_an_entry_with_whitespace_or_a_leading_dash()
+    {
+        // A space, a tab or a leading dash would let the entry smuggle extra
+        // node options (e.g. "-e <code>") into the systemd ExecStart; the agent
+        // rejects the same, this keeps it out of the UI.
+        foreach (['-e console.log(1)', 'server.mjs --inspect', "a\tb.mjs"] as $entry) {
+            $this->actingAs($this->account)
+                ->post(route('domains.node-app.store', $this->domain), [
+                    'entry' => $entry,
+                    'env' => [],
+                ])
+                ->assertSessionHasErrors('entry');
+        }
+
+        $this->assertDatabaseCount('node_apps', 0);
+    }
+
     public function test_enabling_rejects_a_bad_environment_name()
     {
         $this->actingAs($this->account)

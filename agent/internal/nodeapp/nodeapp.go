@@ -1,10 +1,12 @@
 // Package nodeapp runs a hosting account's Node.js application as a systemd
 // service: one service per domain, run as the account's own user in its
-// resource slice (rayxo-<user>.slice), listening on a localhost port that
-// Nginx reverse-proxies the domain to. The account builds its own app; rayxod
-// only runs the built output. Each app's environment (including its secrets)
-// is written 0600 and owned by the account, outside /etc/rayxo so the app's
-// own user can read it.
+// resource slice (rayxo-<user>.slice), listening on a per-account unix socket
+// that Nginx reverse-proxies the domain to. The socket (not a shared loopback
+// TCP port) keeps the app reachable only by Nginx and its own account, never
+// by another tenant on 127.0.0.1. The account builds its own app; rayxod only
+// runs the built output. Each app's environment (including its secrets) is
+// written 0600 and owned by the account, outside /etc/rayxo so the app's own
+// user can read it.
 package nodeapp
 
 import (
@@ -30,6 +32,14 @@ const (
 	// unitPrefix starts every node app unit; the domain follows, e.g.
 	// rayxo-nodeapp-example.com.service.
 	unitPrefix = "rayxo-nodeapp-"
+	// socketRoot holds one 0710 <user>:rayxo-nginx subdirectory per account,
+	// each with that account's app sockets. Only the account (owner) and Nginx
+	// (group rayxo-nginx) can reach a socket; another tenant cannot traverse
+	// the subdirectory, so it can never connect to the app.
+	socketRoot = "/run/rayxo-nodeapp"
+	// nginxGroup owns the socket directory as group and, through the setgid
+	// bit, the socket itself, so Nginx (which runs as rayxo-nginx) can connect.
+	nginxGroup = "rayxo-nginx"
 )
 
 // Config sets where the manager writes files and how it runs programs.
@@ -38,6 +48,10 @@ type Config struct {
 	ConfDir string
 	// UnitDir holds the rendered systemd units.
 	UnitDir string
+	// SocketRoot holds a per-account directory with the app's listen socket, so
+	// each app is reachable only by Nginx and its own account, never on a
+	// shared loopback TCP port other accounts could connect to.
+	SocketRoot string
 	// NodeBinary is the node executable the unit runs.
 	NodeBinary string
 	// Run runs a program; nil uses the real runner. Tests inject a fake.
@@ -51,6 +65,7 @@ func DefaultConfig() Config {
 		// own user, which must be able to read its own env file here.
 		ConfDir:    "/etc/rayxo-nodeapp",
 		UnitDir:    "/etc/systemd/system",
+		SocketRoot: socketRoot,
 		NodeBinary: nodeBinary,
 		Run:        runner.Run,
 	}
@@ -69,11 +84,16 @@ func New(cfg Config) *Manager {
 		cfg.NodeBinary = nodeBinary
 	}
 
+	if cfg.SocketRoot == "" {
+		cfg.SocketRoot = socketRoot
+	}
+
 	return &Manager{cfg: cfg}
 }
 
 // App is one domain's Node.js app: the account that owns it, where it runs,
-// its entry file, environment and the localhost port it listens on.
+// its entry file and environment. It listens on the per-account unix socket
+// the manager points its env and Nginx at, not a TCP port.
 type App struct {
 	User    string
 	UID     int
@@ -82,9 +102,11 @@ type App struct {
 	WorkDir string
 	// Entry is the script node runs, relative to WorkDir.
 	Entry string
-	// Env are the account's own variables; PORT, HOST and NODE_ENV are added
-	// by the manager and win over any the account sets.
-	Env  map[string]string
+	// Env are the account's own variables; NODE_ENV and the socket variables
+	// are added by the manager and win over any the account sets.
+	Env map[string]string
+	// Port is the loopback port the panel allocated. It is no longer bound (the
+	// app listens on a unix socket); kept so the panel's payload stays stable.
 	Port int
 }
 
@@ -101,7 +123,7 @@ func (m *Manager) Provision(ctx context.Context, app App) error {
 		return fmt.Errorf("set mode on %s: %w", m.cfg.ConfDir, err)
 	}
 
-	env := renderEnv(app)
+	env := m.renderEnv(app)
 	envPath := m.envPath(app.Domain)
 	envChanged := !sameContent(envPath, env)
 
@@ -198,6 +220,18 @@ func (m *Manager) envPath(domain string) string {
 	return filepath.Join(m.cfg.ConfDir, domain+".env")
 }
 
+// socketDir is the account's per-account socket directory (0710
+// <user>:rayxo-nginx, setgid), inside the shared socket root.
+func (m *Manager) socketDir(user string) string {
+	return filepath.Join(m.cfg.SocketRoot, user)
+}
+
+// socketPath is where one domain's app listens, inside the account's
+// socketDir, so only the account and Nginx can reach it.
+func (m *Manager) socketPath(user, domain string) string {
+	return filepath.Join(m.socketDir(user), domain+".sock")
+}
+
 // renderUnit fills the systemd unit for one app.
 func (m *Manager) renderUnit(app App) ([]byte, error) {
 	tmpl, err := template.New("nodeapp.service").Parse(unitTemplate)
@@ -207,14 +241,18 @@ func (m *Manager) renderUnit(app App) ([]byte, error) {
 
 	var buf bytes.Buffer
 	data := struct {
-		User, Domain, WorkDir, Entry, EnvFile, NodeBinary string
+		User, Group, Domain, WorkDir, Entry, EnvFile, NodeBinary, SocketRoot, SocketDir, Socket string
 	}{
 		User:       app.User,
+		Group:      nginxGroup,
 		Domain:     app.Domain,
 		WorkDir:    app.WorkDir,
 		Entry:      app.Entry,
 		EnvFile:    m.envPath(app.Domain),
 		NodeBinary: m.cfg.NodeBinary,
+		SocketRoot: m.cfg.SocketRoot,
+		SocketDir:  m.socketDir(app.User),
+		Socket:     m.socketPath(app.User, app.Domain),
 	}
 
 	if err := tmpl.Execute(&buf, data); err != nil {
@@ -225,10 +263,17 @@ func (m *Manager) renderUnit(app App) ([]byte, error) {
 }
 
 // renderEnv writes the systemd EnvironmentFile: the account's own variables
-// first, then PORT, HOST and NODE_ENV, which the manager controls and which
-// therefore win over any the account set. Keys are sorted so the file only
-// changes when its contents do.
-func renderEnv(app App) []byte {
+// first, then NODE_ENV and the socket variables, which the manager controls
+// and which therefore win over any the account set. Keys are sorted so the
+// file only changes when its contents do.
+//
+// The app must listen on the unix socket, not a TCP port: NITRO_UNIX_SOCKET is
+// Nitro's (Nuxt's) own variable, RAYXO_NODE_SOCKET is the explicit one to pass
+// to server.listen(), and PORT is set to the socket path too so the common
+// server.listen(process.env.PORT) binds the socket (Node treats a non-numeric
+// value as a pipe path). No HOST is set, which would turn that call back into
+// a TCP listen.
+func (m *Manager) renderEnv(app App) []byte {
 	var buf bytes.Buffer
 
 	buf.WriteString("# Node.js app " + app.Domain + ". Written by rayxod; changes are overwritten.\n")
@@ -244,9 +289,11 @@ func renderEnv(app App) []byte {
 		buf.WriteString(key + "=" + app.Env[key] + "\n")
 	}
 
+	socket := m.socketPath(app.User, app.Domain)
 	buf.WriteString("NODE_ENV=production\n")
-	buf.WriteString("HOST=127.0.0.1\n")
-	buf.WriteString(fmt.Sprintf("PORT=%d\n", app.Port))
+	buf.WriteString("NITRO_UNIX_SOCKET=" + socket + "\n")
+	buf.WriteString("RAYXO_NODE_SOCKET=" + socket + "\n")
+	buf.WriteString("PORT=" + socket + "\n")
 
 	return buf.Bytes()
 }
