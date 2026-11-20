@@ -122,14 +122,14 @@ func (s *Server) handle(ctx context.Context, conn *net.UnixConn) {
 	uid, err := s.PeerUID(conn)
 	if err != nil {
 		s.Logger.Warn("rejected caller: unknown peer credentials", "error", err)
-		s.write(conn, Response{Error: Errorf(CodeForbidden, "the agent could not identify the calling process")})
+		s.reject(conn, Errorf(CodeForbidden, "the agent could not identify the calling process"))
 
 		return
 	}
 
 	if !s.Authorize(uid) {
 		s.Logger.Warn("rejected caller", "uid", uid)
-		s.write(conn, Response{Error: Errorf(CodeForbidden, "this process is not allowed to use the agent")})
+		s.reject(conn, Errorf(CodeForbidden, "this process is not allowed to use the agent"))
 
 		return
 	}
@@ -146,6 +146,17 @@ func (s *Server) handle(ctx context.Context, conn *net.UnixConn) {
 	_ = conn.SetReadDeadline(time.Time{})
 
 	s.write(conn, s.call(ctx, uid, request))
+}
+
+// reject answers a caller the agent will not serve: it writes the error, then
+// drains whatever request the caller is still sending. Draining lets the
+// caller's write finish so it reads the error, instead of racing the deferred
+// close and seeing a broken pipe. Bounded by the request size and read timeout.
+func (s *Server) reject(conn *net.UnixConn, err *Error) {
+	s.write(conn, Response{Error: err})
+
+	_ = conn.SetReadDeadline(time.Now().Add(s.ReadTimeout))
+	_, _ = io.Copy(io.Discard, io.LimitReader(conn, int64(s.MaxRequestBytes)+1))
 }
 
 func (s *Server) readRequest(conn io.Reader) (Request, *Error) {
