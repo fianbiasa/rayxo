@@ -1,0 +1,38 @@
+name: Usulan fitur
+description: Usulkan ide atau peningkatan untuk RAYXO
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Punya pertanyaan, bukan usulan? Mampir ke
+        [Discussions](https://github.com/fianbiasa/rayxo/discussions).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Masalah yang ingin dipecahkan
+      description: Apa yang sulit atau belum bisa dilakukan sekarang?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solusi yang kamu bayangkan
+      description: Jelaskan fitur atau perubahan yang kamu inginkan.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatif yang sudah dipertimbangkan
+  - type: dropdown
+    id: area
+    attributes:
+      label: Bagian yang paling terkait
+      options:
+        - Panel web (Laravel + React)
+        - Agent (rayxod)
+        - Installer (setup.sh)
+        - Modul WHMCS
+        - Dokumentasi
+        - Lainnya
