@@ -45,10 +45,9 @@ proyek atau komunitasnya di ruang publik.
 ## Penegakan
 
 Perilaku yang kasar, melecehkan, atau tidak dapat diterima lainnya dapat
-dilaporkan secara pribadi kepada pengelola proyek melalui kontak yang tercantum
-di [profil GitHub maintainer](https://github.com/fianbiasa). Semua laporan akan
-ditinjau dan ditindaklanjuti seperlunya, dan dijaga kerahasiaannya demi
-pelapor. Pengelola yang tidak menegakkan Kode Etik dengan itikad baik dapat
+dilaporkan secara pribadi kepada pengelola proyek di hi@rayxopanel.com. Semua
+laporan akan ditinjau dan ditindaklanjuti seperlunya, dan dijaga kerahasiaannya
+demi pelapor. Pengelola yang tidak menegakkan Kode Etik dengan itikad baik dapat
 menghadapi konsekuensi yang ditentukan oleh anggota pimpinan proyek lainnya.
 
 ## Atribusi
