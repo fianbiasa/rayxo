@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Agent\AgentException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\TryPanelPortRequest;
+use App\Http\Requests\Admin\UpdateCustomSmtpRequest;
 use App\Http\Requests\Admin\UpdateMailSendLimitsRequest;
 use App\Http\Requests\Admin\UpdateNameserversRequest;
 use App\Http\Requests\Admin\UpdatePhpUploadLimitsRequest;
@@ -24,6 +25,8 @@ use App\Support\PhpSettings;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Mail\Message;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -79,6 +82,7 @@ class ServerSettingController extends Controller
             'ioncube' => $this->settings->ionCube(),
             'clamav' => $this->settings->clamav(),
             'waf' => $this->settings->waf(),
+            'custom_smtp' => $this->settings->customSmtp(),
             'update' => $this->updates->info(is_array($server) && is_string($server['version'] ?? null) ? $server['version'] : ''),
             'telegram_bot' => $this->telegram->username(),
             'mail_limits' => [
@@ -409,6 +413,55 @@ class ServerSettingController extends Controller
         };
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
+
+        return back();
+    }
+
+    /**
+     * Save the custom SMTP settings for the panel's outgoing email. When
+     * enabled, the panel sends through this SMTP server; when off, it uses the
+     * mailer the installer configured.
+     */
+    public function updateCustomSmtp(UpdateCustomSmtpRequest $request): RedirectResponse
+    {
+        $state = $this->settings->setCustomSmtp($request->validated(), $request->user());
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => $state['enabled']
+                ? __('Custom SMTP is on: the panel now sends its email through your SMTP server.')
+                : __("Custom SMTP is off: the panel uses the server's built-in mail."),
+        ]);
+
+        return back();
+    }
+
+    /**
+     * Send a test email through whatever mailer is configured now (the saved
+     * custom SMTP when it is enabled, otherwise the built-in one), so the admin
+     * can confirm the settings work.
+     */
+    public function testCustomSmtp(Request $request): RedirectResponse
+    {
+        $validated = $request->validate(['email' => ['required', 'email']]);
+
+        $this->settings->applyMailConfig();
+
+        try {
+            Mail::raw(
+                __('This is a test email from your RAYXO panel. If you received it, the mail settings are working.'),
+                fn (Message $message) => $message->to($validated['email'])->subject(__('RAYXO test email')),
+            );
+        } catch (\Throwable $exception) {
+            throw ValidationException::withMessages([
+                'email' => __('The test email could not be sent: :message', ['message' => $exception->getMessage()]),
+            ]);
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Test email sent to :email.', ['email' => $validated['email']]),
+        ]);
 
         return back();
     }

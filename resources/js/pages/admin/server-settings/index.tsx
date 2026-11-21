@@ -3,9 +3,11 @@ import {
     ArrowUpCircle,
     CheckCircle2,
     Clock,
+    Mail,
     MailCheck,
     Network,
     PencilLine,
+    Send,
     ShieldAlert,
     ShieldCheck,
     Upload,
@@ -48,6 +50,7 @@ import {
     bandwidth as updateBandwidth,
     clamav as updateClamav,
     clamavScan,
+    customSmtp as updateCustomSmtp,
     databaseRemoteAccess as updateDatabaseRemoteAccess,
     hostname as updateHostname,
     hostnameCertificate,
@@ -63,6 +66,7 @@ import {
     updateChannel as setUpdateChannel,
     waf as updateWaf,
 } from '@/routes/admin/server-settings';
+import { test as testCustomSmtp } from '@/routes/admin/server-settings/custom-smtp';
 import { destroy as removeTelegram } from '@/routes/admin/server-settings/telegram';
 import {
     cancel as cancelPort,
@@ -148,12 +152,24 @@ type Props = {
     ioncube: IonCube;
     clamav: Clamav;
     waf: Waf;
+    custom_smtp: CustomSmtp;
     update: UpdateInfo;
     telegram_bot: string | null;
     security_policy: SecurityPolicy;
 };
 
 type Waf = { mode: 'off' | 'detection' | 'on' };
+
+type CustomSmtp = {
+    enabled: boolean;
+    host: string;
+    port: number;
+    username: string;
+    encryption: 'none' | 'tls' | 'ssl';
+    from_address: string;
+    from_name: string;
+    password_set: boolean;
+};
 
 type IonCube = {
     enabled: boolean;
@@ -198,6 +214,7 @@ export default function ServerSettings({
     ioncube,
     clamav,
     waf,
+    custom_smtp,
     update,
     telegram_bot,
     security_policy,
@@ -289,6 +306,7 @@ export default function ServerSettings({
             <IonCubePanel ioncube={ioncube} />
             <ClamavPanel clamav={clamav} />
             <WafPanel waf={waf} />
+            <CustomSmtpPanel customSmtp={custom_smtp} />
 
             <TelegramPanel bot={telegram_bot} />
 
@@ -1259,6 +1277,223 @@ function WafPanel({ waf }: { waf: Waf }) {
                     </>
                 )}
             </Form>
+        </Panel>
+    );
+}
+
+function CustomSmtpPanel({ customSmtp }: { customSmtp: CustomSmtp }) {
+    const s = customSmtp;
+    const [enabled, setEnabled] = useState(s.enabled);
+    const [encryption, setEncryption] = useState<CustomSmtp['encryption']>(
+        s.encryption,
+    );
+
+    return (
+        <Panel
+            title="SMTP kustom (email panel)"
+            description="Secara bawaan panel mengirim emailnya sendiri (notifikasi, reset kata sandi, tiket) lewat mail server yang dipasang installer. Aktifkan SMTP kustom untuk memakai server SMTP lain; kalau dimatikan atau dikosongkan, email bawaan server yang dipakai."
+        >
+            <Form
+                {...updateCustomSmtp.form()}
+                options={{ preserveScroll: true }}
+                transform={(data) => ({ ...data, enabled })}
+                className="space-y-5"
+            >
+                {({ processing, errors }) => (
+                    <>
+                        <label className="flex flex-wrap items-center gap-3">
+                            <Checkbox
+                                checked={enabled}
+                                onCheckedChange={(value) =>
+                                    setEnabled(value === true)
+                                }
+                            />
+                            <span className="text-sm font-medium">
+                                Aktifkan SMTP kustom
+                            </span>
+                            <StatusBadge
+                                status={s.enabled ? 'active' : 'neutral'}
+                                label={s.enabled ? 'Aktif' : 'Mati'}
+                            />
+                        </label>
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <Field
+                                id="smtp-host"
+                                label="Host SMTP"
+                                error={errors.host}
+                            >
+                                <Input
+                                    id="smtp-host"
+                                    name="host"
+                                    defaultValue={s.host}
+                                    placeholder="smtp.contoh.com"
+                                    autoComplete="off"
+                                    className="rounded-xl"
+                                />
+                            </Field>
+                            <Field
+                                id="smtp-port"
+                                label="Port"
+                                error={errors.port}
+                            >
+                                <Input
+                                    id="smtp-port"
+                                    name="port"
+                                    type="number"
+                                    min={1}
+                                    max={65535}
+                                    defaultValue={s.port || 587}
+                                    className="rounded-xl"
+                                />
+                            </Field>
+                            <Field
+                                id="smtp-encryption"
+                                label="Keamanan"
+                                error={errors.encryption}
+                            >
+                                <input
+                                    type="hidden"
+                                    name="encryption"
+                                    value={encryption}
+                                />
+                                <Select
+                                    value={encryption}
+                                    onValueChange={(value) =>
+                                        setEncryption(
+                                            value as CustomSmtp['encryption'],
+                                        )
+                                    }
+                                >
+                                    <SelectTrigger
+                                        id="smtp-encryption"
+                                        className="w-full rounded-xl bg-card px-3.5 data-[size=default]:h-11"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="rounded-xl">
+                                        <SelectItem value="tls">
+                                            STARTTLS (umumnya port 587)
+                                        </SelectItem>
+                                        <SelectItem value="ssl">
+                                            SSL/TLS (umumnya port 465)
+                                        </SelectItem>
+                                        <SelectItem value="none">
+                                            Tanpa enkripsi
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </Field>
+                            <Field
+                                id="smtp-username"
+                                label="Username"
+                                error={errors.username}
+                            >
+                                <Input
+                                    id="smtp-username"
+                                    name="username"
+                                    defaultValue={s.username}
+                                    autoComplete="off"
+                                    className="rounded-xl"
+                                />
+                            </Field>
+                            <Field
+                                id="smtp-password"
+                                label="Password"
+                                error={errors.password}
+                            >
+                                <Input
+                                    id="smtp-password"
+                                    name="password"
+                                    type="password"
+                                    autoComplete="new-password"
+                                    placeholder={
+                                        s.password_set
+                                            ? 'Tersimpan — isi untuk mengganti'
+                                            : ''
+                                    }
+                                    className="rounded-xl"
+                                />
+                            </Field>
+                            <Field
+                                id="smtp-from-address"
+                                label="Email pengirim (from)"
+                                error={errors.from_address}
+                            >
+                                <Input
+                                    id="smtp-from-address"
+                                    name="from_address"
+                                    type="email"
+                                    defaultValue={s.from_address}
+                                    placeholder="panel@contoh.com"
+                                    autoComplete="off"
+                                    className="rounded-xl"
+                                />
+                            </Field>
+                            <Field
+                                id="smtp-from-name"
+                                label="Nama pengirim"
+                                error={errors.from_name}
+                            >
+                                <Input
+                                    id="smtp-from-name"
+                                    name="from_name"
+                                    defaultValue={s.from_name}
+                                    placeholder="Panel RAYXO"
+                                    autoComplete="off"
+                                    className="rounded-xl"
+                                />
+                            </Field>
+                        </div>
+
+                        <Button type="submit" disabled={processing}>
+                            {processing ? <Spinner /> : <Mail />}
+                            Simpan SMTP
+                        </Button>
+                    </>
+                )}
+            </Form>
+
+            <div className="mt-5 space-y-3 border-t pt-5">
+                <p className="text-sm font-medium">Kirim email tes</p>
+                <p className="text-xs text-muted-foreground">
+                    Simpan dulu pengaturannya, lalu kirim tes memakai
+                    konfigurasi yang tersimpan.
+                </p>
+                <Form
+                    {...testCustomSmtp.form()}
+                    options={{ preserveScroll: true }}
+                    className="flex flex-wrap items-end gap-3"
+                >
+                    {({ processing, errors }) => (
+                        <>
+                            <Field
+                                id="smtp-test-email"
+                                label="Kirim ke"
+                                error={errors.email}
+                            >
+                                <Input
+                                    id="smtp-test-email"
+                                    name="email"
+                                    type="email"
+                                    placeholder="kamu@contoh.com"
+                                    autoComplete="off"
+                                    className="w-64 rounded-xl"
+                                    required
+                                />
+                            </Field>
+                            <Button
+                                type="submit"
+                                variant="outline"
+                                disabled={processing}
+                            >
+                                {processing ? <Spinner /> : <Send />}
+                                Kirim tes
+                            </Button>
+                        </>
+                    )}
+                </Form>
+            </div>
         </Panel>
     );
 }

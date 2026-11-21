@@ -113,6 +113,7 @@ export const auditActionLabels: Record<string, string> = {
     'server.ioncube_changed': 'ionCube Loader diubah',
     'server.clamav_changed': 'ClamAV diubah',
     'server.waf_changed': 'ModSecurity (WAF) diubah',
+    'server.custom_smtp_changed': 'SMTP kustom diubah',
     'server.clamav_scanned': 'Scan ClamAV dijalankan',
     'server.php_uploads_changed': 'Batas upload PHP diubah',
     'server.hostname_ssl_requested': 'SSL hostname diminta',
