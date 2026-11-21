@@ -940,20 +940,23 @@ create_layout() {
 }
 
 # Run "<apt-get ...> update", tried again several times with a growing wait: a
-# mirror (e.g. packages.sury.org) can briefly serve an index that is out of sync
-# with its signed Release file ("File has unexpected size") while it propagates,
-# which can last a few minutes. The backoff below waits up to ~4 minutes total.
+# mirror (e.g. packages.sury.org or deb.nodesource.com) can briefly serve an
+# index that is out of sync with its signed Release file ("File has unexpected
+# size"/"Hash Sum mismatch") while it propagates, or be unreachable, for several
+# minutes. Two layers ride that out: apt retries each failed file in one update
+# (Acquire::Retries), and the outer loop retries the whole update with a growing
+# backoff, waiting up to ~8 minutes total before giving up.
 apt_update() {
-    local attempt max=6
-    local -a waits=(15 30 45 60 90)
+    local attempt max=8
+    local -a waits=(15 30 45 60 90 120 120)
 
     for attempt in $(seq 1 "$max"); do
-        if "$@" update >>"$INSTALL_LOG" 2>&1; then
+        if "$@" -o Acquire::Retries=3 update >>"$INSTALL_LOG" 2>&1; then
             return 0
         fi
 
         if ((attempt < max)); then
-            local delay=${waits[attempt - 1]:-90}
+            local delay=${waits[attempt - 1]:-120}
             warn "apt-get update gagal (percobaan $attempt dari $max); dicoba lagi ${delay} detik lagi"
             sleep "$delay"
         fi
