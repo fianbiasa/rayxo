@@ -939,18 +939,23 @@ create_layout() {
     touch "$CONFIG_DIR/.setup-started"
 }
 
-# Run "<apt-get ...> update", tried again a few times: Ubuntu's mirrors fail
-# now and then while they sync ("File has unexpected size").
+# Run "<apt-get ...> update", tried again several times with a growing wait: a
+# mirror (e.g. packages.sury.org) can briefly serve an index that is out of sync
+# with its signed Release file ("File has unexpected size") while it propagates,
+# which can last a few minutes. The backoff below waits up to ~4 minutes total.
 apt_update() {
-    local attempt
-    for attempt in 1 2 3; do
+    local attempt max=6
+    local -a waits=(15 30 45 60 90)
+
+    for attempt in $(seq 1 "$max"); do
         if "$@" update >>"$INSTALL_LOG" 2>&1; then
             return 0
         fi
 
-        if ((attempt < 3)); then
-            warn "apt-get update gagal (percobaan $attempt dari 3); dicoba lagi 20 detik lagi"
-            sleep 20
+        if ((attempt < max)); then
+            local delay=${waits[attempt - 1]:-90}
+            warn "apt-get update gagal (percobaan $attempt dari $max); dicoba lagi ${delay} detik lagi"
+            sleep "$delay"
         fi
     done
 
