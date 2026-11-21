@@ -10,6 +10,7 @@ use App\Models\Setting;
 use App\Models\Task;
 use App\Models\User;
 use App\Support\PhpSettings;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -51,6 +52,19 @@ class ServerSettingsService
      * The ModSecurity modes the admin may choose.
      */
     public const WAF_MODES = ['off', 'detection', 'on'];
+
+    /**
+     * Custom SMTP for the panel's own outgoing email (notifications, password
+     * resets, tickets). When enabled, the panel sends through this SMTP server
+     * instead of the built-in mailer the installer configured. The password is
+     * stored encrypted.
+     */
+    public const CUSTOM_SMTP = 'mail.custom_smtp';
+
+    /**
+     * Transport security a custom SMTP server may use.
+     */
+    public const SMTP_ENCRYPTIONS = ['none', 'tls', 'ssl'];
 
     /**
      * How many recipients each hosting account may send mail to per 24
@@ -239,6 +253,135 @@ class ServerSettingsService
         $this->audit->record('server.waf_changed', null, ['mode' => $mode], $actor);
 
         return $this->waf();
+    }
+
+    /**
+     * The custom SMTP settings for the panel's outgoing email, safe to send to
+     * the UI: the password is never returned, only whether one is set.
+     *
+     * @return array{enabled: bool, host: string, port: int, username: string, encryption: string, from_address: string, from_name: string, password_set: bool}
+     */
+    public function customSmtp(): array
+    {
+        $saved = (array) ($this->get(self::CUSTOM_SMTP) ?? []);
+
+        return [
+            'enabled' => (bool) ($saved['enabled'] ?? false),
+            'host' => (string) ($saved['host'] ?? ''),
+            'port' => (int) ($saved['port'] ?? 587),
+            'username' => (string) ($saved['username'] ?? ''),
+            'encryption' => in_array($saved['encryption'] ?? null, self::SMTP_ENCRYPTIONS, true) ? (string) $saved['encryption'] : 'tls',
+            'from_address' => (string) ($saved['from_address'] ?? ''),
+            'from_name' => (string) ($saved['from_name'] ?? ''),
+            'password_set' => ! empty($saved['password']),
+        ];
+    }
+
+    /**
+     * Save the custom SMTP settings. A blank password keeps the stored one, so
+     * the admin can change other fields without re-typing it; a new password is
+     * encrypted at rest.
+     *
+     * @param  array{enabled?: mixed, host?: mixed, port?: mixed, username?: mixed, password?: mixed, encryption?: mixed, from_address?: mixed, from_name?: mixed}  $settings
+     * @return array{enabled: bool, host: string, port: int, username: string, encryption: string, from_address: string, from_name: string, password_set: bool}
+     */
+    public function setCustomSmtp(array $settings, User $actor): array
+    {
+        $saved = (array) ($this->get(self::CUSTOM_SMTP) ?? []);
+
+        $password = $saved['password'] ?? null;
+        if (isset($settings['password']) && $settings['password'] !== '') {
+            $password = Crypt::encryptString((string) $settings['password']);
+        }
+
+        $encryption = in_array($settings['encryption'] ?? null, self::SMTP_ENCRYPTIONS, true) ? (string) $settings['encryption'] : 'tls';
+
+        $data = [
+            'enabled' => (bool) ($settings['enabled'] ?? false),
+            'host' => trim((string) ($settings['host'] ?? '')),
+            'port' => (int) ($settings['port'] ?? 587),
+            'username' => trim((string) ($settings['username'] ?? '')),
+            'password' => $password,
+            'encryption' => $encryption,
+            'from_address' => trim((string) ($settings['from_address'] ?? '')),
+            'from_name' => trim((string) ($settings['from_name'] ?? '')),
+        ];
+
+        $this->put(self::CUSTOM_SMTP, $data);
+
+        $audit = $data;
+        unset($audit['password']);
+        $audit['password_set'] = ! empty($data['password']);
+        $this->audit->record('server.custom_smtp_changed', null, $audit, $actor);
+
+        return $this->customSmtp();
+    }
+
+    /**
+     * The decrypted mailer configuration when custom SMTP is enabled and has a
+     * host, or null to leave the built-in (installer-configured) mailer in place.
+     *
+     * @return array{scheme: string, host: string, port: int, username: string, password: string, from_address: string, from_name: string}|null
+     */
+    public function customSmtpConfig(): ?array
+    {
+        $saved = (array) ($this->get(self::CUSTOM_SMTP) ?? []);
+
+        if (empty($saved['enabled']) || empty($saved['host'])) {
+            return null;
+        }
+
+        $password = '';
+        if (! empty($saved['password'])) {
+            try {
+                $password = Crypt::decryptString((string) $saved['password']);
+            } catch (\Throwable) {
+                $password = '';
+            }
+        }
+
+        $encryption = (string) ($saved['encryption'] ?? 'tls');
+
+        return [
+            'scheme' => $encryption === 'ssl' ? 'smtps' : 'smtp',
+            'host' => (string) $saved['host'],
+            'port' => (int) ($saved['port'] ?: ($encryption === 'ssl' ? 465 : 587)),
+            'username' => (string) ($saved['username'] ?? ''),
+            'password' => $password,
+            'from_address' => (string) ($saved['from_address'] ?? ''),
+            'from_name' => (string) ($saved['from_name'] ?? ''),
+        ];
+    }
+
+    /**
+     * Point Laravel's mailer at the custom SMTP server when it is enabled; a
+     * no-op otherwise, leaving the installer's built-in mailer in place. Called
+     * on boot and before a test send.
+     */
+    public function applyMailConfig(): void
+    {
+        $config = $this->customSmtpConfig();
+        if ($config === null) {
+            return;
+        }
+
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.transport' => 'smtp',
+            'mail.mailers.smtp.scheme' => $config['scheme'],
+            'mail.mailers.smtp.host' => $config['host'],
+            'mail.mailers.smtp.port' => $config['port'],
+            'mail.mailers.smtp.username' => $config['username'] !== '' ? $config['username'] : null,
+            'mail.mailers.smtp.password' => $config['password'] !== '' ? $config['password'] : null,
+        ]);
+
+        if ($config['from_address'] !== '') {
+            config(['mail.from.address' => $config['from_address']]);
+        }
+
+        if ($config['from_name'] !== '') {
+            config(['mail.from.name' => $config['from_name']]);
+        }
     }
 
     /**

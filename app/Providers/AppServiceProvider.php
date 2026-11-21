@@ -7,6 +7,7 @@ use App\Agent\FakeAgentClient;
 use App\Agent\SocketAgentClient;
 use App\Models\LoginKey;
 use App\Services\LoginKeyService;
+use App\Services\ServerSettingsService;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -40,6 +41,22 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureApi();
+        $this->configureMail();
+    }
+
+    /**
+     * Point the panel's mailer at a custom SMTP server when the admin has
+     * enabled one in Server Settings; otherwise leave the built-in mailer the
+     * installer configured. Guarded so a fresh install (no settings table yet)
+     * or a bad stored value never breaks the boot.
+     */
+    protected function configureMail(): void
+    {
+        try {
+            $this->app->make(ServerSettingsService::class)->applyMailConfig();
+        } catch (\Throwable) {
+            // Keep the installer-configured mailer.
+        }
     }
 
     /**

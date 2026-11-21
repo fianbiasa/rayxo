@@ -426,6 +426,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('server-settings/waf', [ServerSettingController::class, 'updateWaf'])
             ->middleware('throttle:10,1,server-waf')
             ->name('server-settings.waf');
+        Route::put('server-settings/custom-smtp', [ServerSettingController::class, 'updateCustomSmtp'])
+            ->middleware('throttle:10,1,server-custom-smtp')
+            ->name('server-settings.custom-smtp');
+        Route::post('server-settings/custom-smtp/test', [ServerSettingController::class, 'testCustomSmtp'])
+            ->middleware('throttle:5,1,server-custom-smtp-test')
+            ->name('server-settings.custom-smtp.test');
         Route::post('server-settings/update', [ServerSettingController::class, 'startUpdate'])
             ->middleware('throttle:10,1,server-update')
             ->name('server-settings.update');
