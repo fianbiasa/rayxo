@@ -7,9 +7,22 @@ const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const lowercase = 'abcdefghijkmnopqrstuvwxyz';
 const digits = '23456789';
 
-/** A random index below `count`. */
+/**
+ * A uniform random index below `count`, drawn from a secure source without
+ * modulo bias: values in the final, partial 2^32 bucket are rejected so the
+ * kept range is an exact multiple of `count`. The same unbiased rule as the
+ * server (App\Support\GeneratedPassword, which uses random_int).
+ */
 function randomIndex(count: number): number {
-    return crypto.getRandomValues(new Uint32Array(1))[0] % count;
+    const buffer = new Uint32Array(1);
+    const limit = Math.floor(0x1_0000_0000 / count) * count;
+
+    let value = crypto.getRandomValues(buffer)[0];
+    while (value >= limit) {
+        value = crypto.getRandomValues(buffer)[0];
+    }
+
+    return value % count;
 }
 
 /**
