@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Pertanyaan & diskusi
+    url: https://github.com/fianbiasa/rayxo/discussions
+    about: Tanya, berbagi ide, atau minta bantuan pemakaian di sini.
+  - name: Dokumentasi
+    url: https://rayxopanel.com/docs/
+    about: Panduan instalasi dan pemakaian lengkap.
+  - name: Lapor celah keamanan
+    url: https://github.com/fianbiasa/rayxo/security/policy
+    about: Jangan buka Issue publik untuk masalah keamanan — laporkan secara privat.

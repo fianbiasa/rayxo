@@ -1,0 +1,67 @@
+name: Laporan bug
+description: Laporkan sesuatu yang tidak bekerja seperti seharusnya
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Terima kasih sudah melapor. Untuk **celah keamanan**, jangan pakai form ini —
+        ikuti [Kebijakan Keamanan](https://github.com/fianbiasa/rayxo/security/policy).
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Sebelum melapor
+      options:
+        - label: Saya sudah mencari dan tidak menemukan Issue yang sama.
+          required: true
+        - label: Saya menjalankan rilis RAYXO terbaru.
+          required: true
+        - label: Ini bukan laporan celah keamanan (yang itu lewat Security policy).
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versi RAYXO
+      placeholder: "misalnya v0.8.35"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Bagian yang terpengaruh
+      options:
+        - Panel web (Laravel + React)
+        - Agent (rayxod)
+        - Installer (setup.sh)
+        - Modul WHMCS
+        - Tidak yakin
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Apa yang terjadi?
+      description: Jelaskan masalahnya, apa yang kamu harapkan, dan apa yang justru terjadi.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Langkah untuk menirukannya
+      placeholder: |
+        1. Buka halaman ...
+        2. Klik ...
+        3. Muncul ...
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS server
+      placeholder: "Ubuntu 24.04 LTS (amd64 / arm64)"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log atau screenshot
+      description: Tempel log yang relevan atau lampirkan screenshot. Jangan sertakan password atau kunci.
+      render: shell
