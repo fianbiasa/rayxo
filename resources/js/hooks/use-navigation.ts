@@ -4,6 +4,7 @@ import {
     ArrowLeftRight,
     Activity,
     BrickWall,
+    Bug,
     ChartColumn,
     Boxes,
     Clock,
@@ -54,6 +55,7 @@ import { index as packagesIndex } from '@/routes/admin/packages';
 import { index as processesIndex } from '@/routes/admin/processes';
 import { index as resellerPackagesIndex } from '@/routes/admin/reseller-packages';
 import { index as serverSettingsIndex } from '@/routes/admin/server-settings';
+import { index as antivirusIndex } from '@/routes/admin/antivirus';
 import { index as servicesIndex } from '@/routes/admin/services';
 import { index as statisticsIndex } from '@/routes/admin/statistics';
 import { index as systemFilesIndex } from '@/routes/admin/system-files';
@@ -182,6 +184,11 @@ export function useNavigation(): {
             href: firewallIndex(),
             icon: BrickWall,
         };
+        const antivirus: NavItem = {
+            title: 'Antivirus',
+            href: antivirusIndex(),
+            icon: Bug,
+        };
         const mailQueue: NavItem = {
             title: 'Antrean Email',
             href: mailQueueIndex(),
@@ -234,6 +241,7 @@ export function useNavigation(): {
                     processes,
                     bruteForce,
                     firewall,
+                    antivirus,
                     mailQueue,
                     ipAddresses,
                     serverBackups,

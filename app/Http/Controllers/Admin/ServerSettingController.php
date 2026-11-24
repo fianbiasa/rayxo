@@ -80,7 +80,6 @@ class ServerSettingController extends Controller
             ],
             'database_remote_access' => $this->databaseTools->remoteAccessEnabled(),
             'ioncube' => $this->settings->ionCube(),
-            'clamav' => $this->settings->clamav(),
             'waf' => $this->settings->waf(),
             'custom_smtp' => $this->settings->customSmtp(),
             'update' => $this->updates->info(is_array($server) && is_string($server['version'] ?? null) ? $server['version'] : ''),
@@ -366,35 +365,6 @@ class ServerSettingController extends Controller
     }
 
     /**
-     * Turn ClamAV and its scan modes (email, on-access, scheduled) on or off.
-     * The sub-modes only apply while ClamAV itself is on.
-     */
-    public function updateClamav(Request $request): RedirectResponse
-    {
-        $validated = $request->validate([
-            'enabled' => ['required', 'boolean'],
-            'email' => ['required', 'boolean'],
-            'on_access' => ['required', 'boolean'],
-            'scheduled' => ['required', 'boolean'],
-        ]);
-
-        $enabled = (bool) $validated['enabled'];
-        $this->settings->setClamav([
-            'enabled' => $enabled,
-            'email' => $enabled && (bool) $validated['email'],
-            'on_access' => $enabled && (bool) $validated['on_access'],
-            'scheduled' => $enabled && (bool) $validated['scheduled'],
-        ], $request->user());
-
-        Inertia::flash('toast', [
-            'type' => 'success',
-            'message' => $enabled ? __('ClamAV is being turned on; downloading signatures can take a few minutes.') : __('ClamAV is off.'),
-        ]);
-
-        return back();
-    }
-
-    /**
      * Set the server-wide ModSecurity (WAF) mode: off, detection-only or on.
      * It is the default for every website that does not override it.
      */
@@ -500,31 +470,6 @@ class ServerSettingController extends Controller
         ]);
 
         $this->updates->setChannel((string) $validated['channel'], $request->user());
-
-        return back();
-    }
-
-    /**
-     * Scan a path under /home now and flash the result.
-     */
-    public function scanClamav(Request $request): RedirectResponse
-    {
-        $validated = $request->validate([
-            // Exactly /home or a path under it: "starts_with:/home" alone would
-            // also accept /homexyz, outside the hosting accounts' root. The
-            // not_regex keeps ".." out so the path cannot climb above /home.
-            'path' => ['required', 'string', 'max:255', 'regex:#^/home(/|$)#', 'not_regex:/\.\./'],
-        ]);
-
-        $result = $this->settings->scanClamav($validated['path'], $request->user());
-
-        $count = count($result['infected']);
-        Inertia::flash('toast', [
-            'type' => $result['clean'] ? 'success' : 'warning',
-            'message' => $result['clean']
-                ? __('Scan clean: no viruses in :path.', ['path' => $validated['path']])
-                : __(':count infected file(s) in :path.', ['count' => $count, 'path' => $validated['path']]),
-        ]);
 
         return back();
     }

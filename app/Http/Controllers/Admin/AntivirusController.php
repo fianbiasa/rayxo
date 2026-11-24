@@ -30,14 +30,28 @@ class AntivirusController extends Controller
      */
     public function update(Request $request): RedirectResponse
     {
-        $validated = $request->validate([
+        $request->validate([
             'enabled' => ['required', 'boolean'],
             'email' => ['required', 'boolean'],
             'on_access' => ['required', 'boolean'],
             'scheduled' => ['required', 'boolean'],
         ]);
 
-        $this->settings->setClamav($validated, $request->user());
+        // The sub-modes only apply while ClamAV itself is on.
+        $enabled = $request->boolean('enabled');
+        $this->settings->setClamav([
+            'enabled' => $enabled,
+            'email' => $enabled && $request->boolean('email'),
+            'on_access' => $enabled && $request->boolean('on_access'),
+            'scheduled' => $enabled && $request->boolean('scheduled'),
+        ], $request->user());
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => $enabled
+                ? __('ClamAV is being turned on; downloading signatures can take a few minutes.')
+                : __('ClamAV is off.'),
+        ]);
 
         return back();
     }

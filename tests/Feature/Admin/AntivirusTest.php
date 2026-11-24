@@ -19,6 +19,15 @@ class AntivirusTest extends TestCase
         $this->app->instance(AgentClient::class, new FakeAgentClient);
     }
 
+    public function test_admin_can_view_the_antivirus_page(): void
+    {
+        $admin = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->get(route('admin.antivirus.index'))
+            ->assertOk();
+    }
+
     public function test_a_non_admin_cannot_view_the_antivirus_page(): void
     {
         $user = User::factory()->create();
