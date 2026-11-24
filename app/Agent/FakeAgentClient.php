@@ -83,6 +83,8 @@ final class FakeAgentClient implements AgentClient
                 'simulated' => true,
             ],
             'clamav.scan' => ['clean' => true, 'infected' => [], 'simulated' => true],
+            'clamav.quarantine.list' => ['entries' => [], 'simulated' => true],
+            'clamav.quarantine.restore', 'clamav.quarantine.delete' => ['simulated' => true],
             'waf.status' => ['mode' => 'off', 'simulated' => true],
             'waf.apply' => ['mode' => in_array($params['mode'] ?? 'off', ['off', 'detection', 'on'], true) ? $params['mode'] : 'off', 'simulated' => true],
             'web.check_domain', 'dns.check_zone', 'mail.check_sieve', 'waf.check',

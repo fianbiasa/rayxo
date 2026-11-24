@@ -35,6 +35,9 @@ final class NotificationEvents
     /** Server config drifted from what RAYXO would write. */
     public const CONFIG_DRIFTED = 'config_drifted';
 
+    /** ClamAV found and quarantined an infected file. */
+    public const VIRUS_FOUND = 'virus_found';
+
     /**
      * @var array<string, list<Role>>
      */
@@ -47,6 +50,7 @@ final class NotificationEvents
         self::BACKUP => [Role::Admin],
         self::UPDATE_AVAILABLE => [Role::Admin],
         self::CONFIG_DRIFTED => [Role::Admin],
+        self::VIRUS_FOUND => [Role::Admin],
     ];
 
     /**
