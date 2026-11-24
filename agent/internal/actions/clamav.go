@@ -16,12 +16,20 @@ import (
 type clamavServer interface {
 	Apply(ctx context.Context, s clamav.Settings) error
 	Status(ctx context.Context) (clamav.Status, error)
-	Scan(ctx context.Context, path string) (clamav.ScanResult, error)
+	ScanAndQuarantine(ctx context.Context, path, source string) (clamav.ScanResult, error)
+	QuarantineList() ([]clamav.QuarantineEntry, error)
+	QuarantineRestore(id string) error
+	QuarantineDelete(id string) error
 }
 
 // clamavScanParams are the params of clamav.scan.
 type clamavScanParams struct {
 	Path string `json:"path"`
+}
+
+// clamavQuarantineParams identify one quarantined file.
+type clamavQuarantineParams struct {
+	ID string `json:"id"`
 }
 
 // clamavActions implements the clamav.* methods. They are server-wide, like
@@ -40,7 +48,10 @@ func clamavMethods(server clamavServer) map[string]rpc.Method {
 		// Enabling downloads the ~300 MB signature database, so allow minutes.
 		"clamav.apply": {Handler: actions.apply, LockKey: lock, Timeout: 20 * time.Minute},
 		// A scan of a large home can take a while.
-		"clamav.scan": {Handler: actions.scan, LockKey: func(json.RawMessage) (string, error) { return "clamav-scan", nil }, Timeout: 30 * time.Minute},
+		"clamav.scan":               {Handler: actions.scan, LockKey: func(json.RawMessage) (string, error) { return "clamav-scan", nil }, Timeout: 30 * time.Minute},
+		"clamav.quarantine.list":    {Handler: actions.quarantineList},
+		"clamav.quarantine.restore": {Handler: actions.quarantineRestore, LockKey: lock},
+		"clamav.quarantine.delete":  {Handler: actions.quarantineDelete, LockKey: lock},
 	}
 }
 
@@ -89,12 +100,62 @@ func (c clamavActions) scan(ctx context.Context, raw json.RawMessage) (any, erro
 		return nil, rpc.Errorf(rpc.CodeInvalidParams, "invalid params: %v", err)
 	}
 
-	result, err := c.server.Scan(ctx, params.Path)
+	result, err := c.server.ScanAndQuarantine(ctx, params.Path, "on-demand")
 	if err != nil {
 		return nil, clamavError(err, "scan "+params.Path)
 	}
 
 	return result, nil
+}
+
+// quarantineList implements clamav.quarantine.list: every file now in
+// quarantine, with its original path, owner, virus and source.
+func (c clamavActions) quarantineList(_ context.Context, raw json.RawMessage) (any, error) {
+	if err := rpc.DecodeParams(raw, &struct{}{}); err != nil {
+		return nil, err
+	}
+
+	entries, err := c.server.QuarantineList()
+	if err != nil {
+		return nil, clamavError(err, "list the quarantine")
+	}
+
+	if entries == nil {
+		entries = []clamav.QuarantineEntry{}
+	}
+
+	return map[string]any{"entries": entries}, nil
+}
+
+// quarantineRestore implements clamav.quarantine.restore: put a quarantined
+// file back where it came from. The admin has confirmed restoring a file a
+// scan flagged as infected.
+func (c clamavActions) quarantineRestore(_ context.Context, raw json.RawMessage) (any, error) {
+	var params clamavQuarantineParams
+	if err := rpc.DecodeParams(raw, &params); err != nil {
+		return nil, err
+	}
+
+	if err := c.server.QuarantineRestore(params.ID); err != nil {
+		return nil, rpc.Errorf(rpc.CodeActionFailed, "%v", err)
+	}
+
+	return struct{}{}, nil
+}
+
+// quarantineDelete implements clamav.quarantine.delete: permanently remove a
+// quarantined file.
+func (c clamavActions) quarantineDelete(_ context.Context, raw json.RawMessage) (any, error) {
+	var params clamavQuarantineParams
+	if err := rpc.DecodeParams(raw, &params); err != nil {
+		return nil, err
+	}
+
+	if err := c.server.QuarantineDelete(params.ID); err != nil {
+		return nil, rpc.Errorf(rpc.CodeActionFailed, "%v", err)
+	}
+
+	return struct{}{}, nil
 }
 
 // validateScanPath keeps scans inside the accounts' home area.
