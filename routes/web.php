@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AccountController;
 use App\Http\Controllers\Admin\AccountImportController;
+use App\Http\Controllers\Admin\AntivirusController;
 use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\BrandingController;
 use App\Http\Controllers\Admin\BruteForceController;
@@ -388,6 +389,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->middleware('throttle:30,1,mail-queue')
             ->name('mail-queue.destroy');
         Route::get('server-settings', [ServerSettingController::class, 'index'])->name('server-settings.index');
+        Route::get('antivirus', [AntivirusController::class, 'index'])->name('antivirus.index');
         Route::put('server-settings/hostname', [ServerSettingController::class, 'updateHostname'])
             ->middleware('throttle:5,1,server-hostname')
             ->name('server-settings.hostname');
@@ -417,12 +419,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('server-settings/ioncube', [ServerSettingController::class, 'updateIonCube'])
             ->middleware('throttle:5,1,server-ioncube')
             ->name('server-settings.ioncube');
-        Route::put('server-settings/clamav', [ServerSettingController::class, 'updateClamav'])
-            ->middleware('throttle:5,1,server-clamav')
-            ->name('server-settings.clamav');
-        Route::post('server-settings/clamav/scan', [ServerSettingController::class, 'scanClamav'])
-            ->middleware('throttle:10,1,server-clamav-scan')
-            ->name('server-settings.clamav-scan');
+        Route::put('antivirus/clamav', [AntivirusController::class, 'update'])
+            ->middleware('throttle:5,1,antivirus-clamav')
+            ->name('antivirus.clamav');
+        Route::post('antivirus/scan', [AntivirusController::class, 'scan'])
+            ->middleware('throttle:10,1,antivirus-scan')
+            ->name('antivirus.scan');
+        Route::post('antivirus/quarantine/restore', [AntivirusController::class, 'restore'])
+            ->middleware('throttle:30,1,antivirus-restore')
+            ->name('antivirus.quarantine.restore');
+        Route::post('antivirus/quarantine/delete', [AntivirusController::class, 'delete'])
+            ->middleware('throttle:30,1,antivirus-delete')
+            ->name('antivirus.quarantine.delete');
         Route::put('server-settings/waf', [ServerSettingController::class, 'updateWaf'])
             ->middleware('throttle:10,1,server-waf')
             ->name('server-settings.waf');

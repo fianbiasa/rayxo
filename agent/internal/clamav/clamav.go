@@ -37,6 +37,28 @@ const (
 	onAccessEnd   = "# END RAYXO on-access"
 )
 
+// Quarantine layout (production paths; the unit templates are hardcoded, while
+// the Manager derives the same paths from Config.QuarantineDir so tests can use
+// a temp dir). Items live in the quarantine root as "<id>" plus "<id>.json"
+// (the metadata sidecar). The scheduled and on-access scanners move infected
+// files into staging/ and log each move; the agent reconciles staging into the
+// index, recovering each file's original path and virus from the log.
+const (
+	prodQuarantineDir = "/var/lib/rayxo/clamav/quarantine"
+	prodStagingDir    = prodQuarantineDir + "/staging"
+	prodLogDir        = prodQuarantineDir + "/logs"
+	prodScanLog       = prodLogDir + "/scan.log"
+	prodOnAccessLog   = prodLogDir + "/onaccess.log"
+
+	stagingName = "staging"
+	logsName    = "logs"
+
+	// The source that put a file in quarantine.
+	sourceOnDemand  = "on-demand"
+	sourceScheduled = "scheduled"
+	sourceOnAccess  = "on-access"
+)
+
 // rspamdAntivirusConf wires Rspamd's antivirus module to clamd over its
 // local socket, so inbound and outbound mail is scanned by the milter.
 const rspamdAntivirusConf = `# Written by rayxod; changes are overwritten.
@@ -51,7 +73,9 @@ clamav {
 `
 
 // scanServiceUnit scans every account home on a timer, moving infected files
-// to quarantine. Exit status 1 (viruses found) is still a successful run.
+// to the quarantine staging area and logging each move, so the agent can
+// reconcile them into the quarantine index with their original path and virus.
+// Exit status 1 (viruses found) is still a successful run.
 const scanServiceUnit = `# Written by rayxod; changes are overwritten.
 [Unit]
 Description=RAYXO ClamAV scheduled scan of /home
@@ -61,8 +85,9 @@ ConditionPathExistsGlob=/var/lib/clamav/*.c?d
 
 [Service]
 Type=oneshot
-ExecStartPre=/usr/bin/install -d -m 0750 /var/lib/rayxo/clamav/quarantine
-ExecStart=/usr/bin/clamdscan --fdpass --multiscan --move=/var/lib/rayxo/clamav/quarantine /home
+ExecStartPre=/usr/bin/install -d -m 0750 ` + prodStagingDir + `
+ExecStartPre=/usr/bin/install -d -m 0750 ` + prodLogDir + `
+ExecStart=/usr/bin/clamdscan --fdpass --multiscan --move=` + prodStagingDir + ` --log=` + prodScanLog + ` /home
 SuccessExitStatus=0 1
 Nice=15
 IOSchedulingClass=idle
@@ -91,8 +116,9 @@ After=clamav-daemon.service
 Requires=clamav-daemon.service
 
 [Service]
-ExecStartPre=/usr/bin/install -d -m 0750 /var/lib/rayxo/clamav/quarantine
-ExecStart=/usr/sbin/clamonacc --foreground --move=/var/lib/rayxo/clamav/quarantine
+ExecStartPre=/usr/bin/install -d -m 0750 ` + prodStagingDir + `
+ExecStartPre=/usr/bin/install -d -m 0750 ` + prodLogDir + `
+ExecStart=/usr/sbin/clamonacc --foreground --move=` + prodStagingDir + ` --log=` + prodOnAccessLog + `
 Restart=on-failure
 RestartSec=5
 

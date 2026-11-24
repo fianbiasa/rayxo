@@ -29,7 +29,7 @@ class ClamavManagementTest extends TestCase
         $admin = User::factory()->admin()->create();
 
         $this->actingAs($admin)
-            ->put(route('admin.server-settings.clamav'), [
+            ->put(route('admin.antivirus.clamav'), [
                 'enabled' => true, 'email' => true, 'on_access' => false, 'scheduled' => true,
             ])
             ->assertSessionHasNoErrors();
@@ -48,7 +48,7 @@ class ClamavManagementTest extends TestCase
         $agent = $this->app->instance(AgentClient::class, new FakeAgentClient);
 
         $this->actingAs(User::factory()->admin()->create())
-            ->put(route('admin.server-settings.clamav'), [
+            ->put(route('admin.antivirus.clamav'), [
                 'enabled' => false, 'email' => true, 'on_access' => true, 'scheduled' => true,
             ])
             ->assertSessionHasNoErrors();
@@ -65,7 +65,7 @@ class ClamavManagementTest extends TestCase
         $admin = User::factory()->admin()->create();
 
         $this->actingAs($admin)
-            ->post(route('admin.server-settings.clamav-scan'), ['path' => '/home/budi'])
+            ->post(route('admin.antivirus.scan'), ['path' => '/home/budi'])
             ->assertSessionHasNoErrors();
 
         $this->assertSame('clamav.scan', $agent->calls()[0]['method']);
@@ -78,7 +78,7 @@ class ClamavManagementTest extends TestCase
         $agent = $this->app->instance(AgentClient::class, new FakeAgentClient);
 
         $this->actingAs(User::factory()->admin()->create())
-            ->post(route('admin.server-settings.clamav-scan'), ['path' => '/etc/passwd'])
+            ->post(route('admin.antivirus.scan'), ['path' => '/etc/passwd'])
             ->assertSessionHasErrors(['path']);
 
         $this->assertSame([], $agent->calls());
@@ -89,7 +89,7 @@ class ClamavManagementTest extends TestCase
         $agent = $this->app->instance(AgentClient::class, new FakeAgentClient);
 
         $this->actingAs(User::factory()->admin()->create())
-            ->post(route('admin.server-settings.clamav-scan'), ['path' => '/home/../etc'])
+            ->post(route('admin.antivirus.scan'), ['path' => '/home/../etc'])
             ->assertSessionHasErrors(['path']);
 
         $this->assertSame([], $agent->calls());

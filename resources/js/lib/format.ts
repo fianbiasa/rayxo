@@ -115,6 +115,8 @@ export const auditActionLabels: Record<string, string> = {
     'server.waf_changed': 'ModSecurity (WAF) diubah',
     'server.custom_smtp_changed': 'SMTP kustom diubah',
     'server.clamav_scanned': 'Scan ClamAV dijalankan',
+    'server.virus_restored': 'File dipulihkan dari karantina',
+    'server.virus_deleted': 'File dihapus dari karantina',
     'server.php_uploads_changed': 'Batas upload PHP diubah',
     'server.hostname_ssl_requested': 'SSL hostname diminta',
     'server.hostname_change_started': 'Penggantian hostname dimulai',

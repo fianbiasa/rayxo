@@ -222,6 +222,33 @@ class ServerSettingsService
     }
 
     /**
+     * ClamAV's live status from the agent: whether the daemon runs, the
+     * signature database is present, and which modes are on. Falls back to the
+     * saved settings (daemon reported down) when the agent cannot be reached.
+     *
+     * @return array{enabled: bool, running: bool, database: bool, email: bool, on_access: bool, scheduled: bool}
+     */
+    public function clamavStatus(): array
+    {
+        $saved = $this->clamav();
+
+        try {
+            $status = (array) $this->agent->call('clamav.status', [], 30);
+        } catch (AgentException) {
+            return array_merge($saved, ['running' => false, 'database' => false]);
+        }
+
+        return [
+            'enabled' => (bool) ($status['enabled'] ?? $saved['enabled']),
+            'running' => (bool) ($status['running'] ?? false),
+            'database' => (bool) ($status['database'] ?? false),
+            'email' => (bool) ($status['email'] ?? $saved['email']),
+            'on_access' => (bool) ($status['on_access'] ?? $saved['on_access']),
+            'scheduled' => (bool) ($status['scheduled'] ?? $saved['scheduled']),
+        ];
+    }
+
+    /**
      * The server-wide ModSecurity (WAF) mode: 'off', 'detection' or 'on'.
      *
      * @return array{mode: string}
@@ -413,6 +440,67 @@ class ServerSettingsService
             'clean' => ($result['clean'] ?? false) === true,
             'infected' => $infected,
         ];
+    }
+
+    /**
+     * Every file now in quarantine, newest first.
+     *
+     * @return list<array{id: string, original_path: string, owner: string, virus: string, quarantined_at: string, source: string}>
+     *
+     * @throws ValidationException
+     */
+    public function quarantineList(): array
+    {
+        try {
+            $result = (array) $this->agent->call('clamav.quarantine.list', [], 60);
+        } catch (AgentException $exception) {
+            throw ValidationException::withMessages(['quarantine' => __('The quarantine could not be read: :message', ['message' => $exception->getMessage()])]);
+        }
+
+        return array_values(array_map(
+            fn (array $item): array => [
+                'id' => (string) ($item['id'] ?? ''),
+                'original_path' => (string) ($item['original_path'] ?? ''),
+                'owner' => (string) ($item['owner'] ?? ''),
+                'virus' => (string) ($item['virus'] ?? ''),
+                'quarantined_at' => (string) ($item['quarantined_at'] ?? ''),
+                'source' => (string) ($item['source'] ?? ''),
+            ],
+            array_filter((array) ($result['entries'] ?? []), 'is_array'),
+        ));
+    }
+
+    /**
+     * Restore a quarantined file to where it came from. The admin has confirmed
+     * restoring a file a scan flagged as infected.
+     *
+     * @throws ValidationException
+     */
+    public function restoreQuarantine(string $id, User $actor): void
+    {
+        try {
+            $this->agent->call('clamav.quarantine.restore', ['id' => $id], 60);
+        } catch (AgentException $exception) {
+            throw ValidationException::withMessages(['quarantine' => __('The file could not be restored: :message', ['message' => $exception->getMessage()])]);
+        }
+
+        $this->audit->record('server.virus_restored', null, ['id' => $id], $actor);
+    }
+
+    /**
+     * Permanently delete a quarantined file.
+     *
+     * @throws ValidationException
+     */
+    public function deleteQuarantine(string $id, User $actor): void
+    {
+        try {
+            $this->agent->call('clamav.quarantine.delete', ['id' => $id], 60);
+        } catch (AgentException $exception) {
+            throw ValidationException::withMessages(['quarantine' => __('The file could not be deleted: :message', ['message' => $exception->getMessage()])]);
+        }
+
+        $this->audit->record('server.virus_deleted', null, ['id' => $id], $actor);
     }
 
     /**

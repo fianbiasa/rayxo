@@ -48,8 +48,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { formatDateTime, formatRelative } from '@/lib/format';
 import {
     bandwidth as updateBandwidth,
-    clamav as updateClamav,
-    clamavScan,
     customSmtp as updateCustomSmtp,
     databaseRemoteAccess as updateDatabaseRemoteAccess,
     hostname as updateHostname,
@@ -66,6 +64,7 @@ import {
     updateChannel as setUpdateChannel,
     waf as updateWaf,
 } from '@/routes/admin/server-settings';
+import { index as antivirusIndex } from '@/routes/admin/antivirus';
 import { test as testCustomSmtp } from '@/routes/admin/server-settings/custom-smtp';
 import { destroy as removeTelegram } from '@/routes/admin/server-settings/telegram';
 import {
@@ -150,7 +149,6 @@ type Props = {
     bandwidth: { suspend_over_limit: boolean };
     database_remote_access: boolean;
     ioncube: IonCube;
-    clamav: Clamav;
     waf: Waf;
     custom_smtp: CustomSmtp;
     update: UpdateInfo;
@@ -178,15 +176,6 @@ type IonCube = {
     loader: string | null;
 };
 
-type ClamavSettings = {
-    enabled: boolean;
-    email: boolean;
-    on_access: boolean;
-    scheduled: boolean;
-};
-
-type Clamav = ClamavSettings;
-
 type MailLimits = {
     account: number | null;
     server: number | null;
@@ -212,7 +201,6 @@ export default function ServerSettings({
     bandwidth,
     database_remote_access,
     ioncube,
-    clamav,
     waf,
     custom_smtp,
     update,
@@ -304,7 +292,17 @@ export default function ServerSettings({
             <DatabaseRemotePanel enabled={database_remote_access} />
 
             <IonCubePanel ioncube={ioncube} />
-            <ClamavPanel clamav={clamav} />
+            <Panel
+                title="Antivirus (ClamAV)"
+                description="Status, mode pindai, pindai sesuai permintaan, dan karantina file terinfeksi kini punya halaman sendiri."
+            >
+                <Button
+                    variant="outline"
+                    onClick={() => router.visit(antivirusIndex().url)}
+                >
+                    Buka halaman Antivirus
+                </Button>
+            </Panel>
             <WafPanel waf={waf} />
             <CustomSmtpPanel customSmtp={custom_smtp} />
 
@@ -1495,151 +1493,6 @@ function CustomSmtpPanel({ customSmtp }: { customSmtp: CustomSmtp }) {
                 </Form>
             </div>
         </Panel>
-    );
-}
-
-function ClamavPanel({ clamav }: { clamav: Clamav }) {
-    const s = clamav;
-    const base = {
-        enabled: s.enabled,
-        email: s.email,
-        on_access: s.on_access,
-        scheduled: s.scheduled,
-    };
-
-    const label = s.enabled ? 'Aktif' : 'Mati';
-
-    return (
-        <Panel
-            title="ClamAV antivirus"
-            description="Pindai virus di lampiran email, terjadwal, on-access, dan sesuai permintaan. clamd memuat database signature besar ke memori, jadi mati sampai kamu nyalakan."
-        >
-            <Form
-                {...updateClamav.form()}
-                options={{ preserveScroll: true }}
-                transform={() => ({ ...base, enabled: !s.enabled })}
-                className="flex flex-wrap items-center gap-4"
-            >
-                {({ processing }) => (
-                    <>
-                        <StatusBadge
-                            status={s.enabled ? 'active' : 'neutral'}
-                            label={label}
-                        />
-                        <Button
-                            type="submit"
-                            variant={s.enabled ? 'outline' : 'default'}
-                            disabled={processing}
-                        >
-                            {processing && <Spinner />}
-                            {s.enabled ? 'Matikan ClamAV' : 'Nyalakan ClamAV'}
-                        </Button>
-                        <p className="w-full text-xs text-muted-foreground">
-                            Mengaktifkan mengunduh database signature (~300 MB)
-                            dan menjalankan clamd (perlu ~1–2 GB RAM); bisa
-                            makan beberapa menit.
-                        </p>
-                    </>
-                )}
-            </Form>
-
-            {s.enabled && (
-                <div className="mt-5 space-y-3 border-t pt-5">
-                    <ClamavSubToggle
-                        label="Scan lampiran email"
-                        description="Pindai lampiran masuk & keluar lewat Rspamd; email berisi virus ditolak."
-                        field="email"
-                        base={base}
-                    />
-                    <ClamavSubToggle
-                        label="Scan terjadwal"
-                        description="Pindai /home tiap hari; file terinfeksi dipindah ke karantina."
-                        field="scheduled"
-                        base={base}
-                    />
-                    <ClamavSubToggle
-                        label="Scan on-access"
-                        description="Pindai tiap file yang dibuka di /home (clamonacc). Berat untuk server sibuk."
-                        field="on_access"
-                        base={base}
-                    />
-
-                    <Form
-                        {...clamavScan.form()}
-                        options={{ preserveScroll: true }}
-                        className="flex flex-wrap items-end gap-3 border-t pt-4"
-                    >
-                        {({ processing, errors }) => (
-                            <>
-                                <div className="space-y-1.5">
-                                    <Label htmlFor="clamav_path">
-                                        Scan sekarang (path di /home)
-                                    </Label>
-                                    <Input
-                                        id="clamav_path"
-                                        name="path"
-                                        defaultValue="/home"
-                                        className="w-72"
-                                    />
-                                </div>
-                                <Button
-                                    type="submit"
-                                    variant="outline"
-                                    disabled={processing}
-                                >
-                                    {processing && <Spinner />}
-                                    Scan
-                                </Button>
-                                <InputError message={errors.path} />
-                            </>
-                        )}
-                    </Form>
-                </div>
-            )}
-        </Panel>
-    );
-}
-
-function ClamavSubToggle({
-    label,
-    description,
-    field,
-    base,
-}: {
-    label: string;
-    description: string;
-    field: 'email' | 'on_access' | 'scheduled';
-    base: ClamavSettings;
-}) {
-    const on = base[field];
-
-    return (
-        <Form
-            {...updateClamav.form()}
-            options={{ preserveScroll: true }}
-            transform={() => ({ ...base, [field]: !on })}
-            className="flex items-center justify-between gap-4"
-        >
-            {({ processing }) => (
-                <>
-                    <div className="min-w-0">
-                        <div className="text-sm font-medium">{label}</div>
-                        <div className="text-xs text-muted-foreground">
-                            {description}
-                        </div>
-                    </div>
-                    <Button
-                        type="submit"
-                        variant={on ? 'outline' : 'default'}
-                        size="sm"
-                        disabled={processing}
-                    >
-                        {processing && <Spinner />}
-                        {on ? 'Matikan' : 'Nyalakan'}
-                    </Button>
-                </>
-            )}
-        </Form>
     );
 }
 
